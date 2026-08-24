@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.local.json
+agent/playwright/.auth/
+agent/data/
+playwright-report/
+test-results/
+.DS_Store
+*.log

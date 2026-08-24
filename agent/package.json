@@ -1,0 +1,27 @@
+{
+  "name": "@crm-sei/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/cli.ts run",
+    "start": "tsx src/cli.ts start",
+    "login": "tsx src/cli.ts login",
+    "login-sei": "tsx src/cli.ts login-sei",
+    "sync": "tsx src/cli.ts sync",
+    "sync-once": "tsx src/cli.ts sync-once",
+    "test": "vitest run --root .. agent/tests",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@crm-sei/core": "*",
+    "@supabase/supabase-js": "^2.56.1",
+    "dotenv": "^17.2.1",
+    "playwright": "^1.55.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.5"
+  }
+}

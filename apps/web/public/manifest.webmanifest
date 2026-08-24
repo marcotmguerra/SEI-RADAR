@@ -1,0 +1,12 @@
+{
+  "name": "CRM SEI",
+  "short_name": "CRM SEI",
+  "description": "Acompanhamento de processos do SEI!MG",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#0f766e",
+  "icons": [
+    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

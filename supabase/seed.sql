@@ -1,0 +1,3 @@
+-- Dados reais e usuarios nao sao criados automaticamente.
+-- Os testes SQL em tests/database criam usuarios efemeros dentro de uma transacao
+-- e fazem rollback ao final, evitando credenciais fixas e dados SEI no repositorio.

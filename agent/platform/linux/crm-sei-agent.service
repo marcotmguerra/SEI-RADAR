@@ -1,0 +1,17 @@
+[Unit]
+Description=Agente local CRM-SEI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/crm-sei/agent
+EnvironmentFile=%h/crm-sei/agent/.env
+ExecStart=/usr/bin/npm run dev:agent --prefix %h/crm-sei
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
