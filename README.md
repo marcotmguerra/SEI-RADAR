@@ -1,66 +1,58 @@
-# CRM SEI
+# 🔔 SEI Notifier - Monitor de Processos
 
-PWA para acompanhar e organizar processos do SEI!MG sem alterar o sistema oficial. O sistema reúne uma interface React, um agente local Playwright e um backend Supabase isolado por usuário.
+Extensão de navegador leve (Chrome, Microsoft Edge e Brave - Manifest V3) que monitora a entrada de novos processos no SEI, extrai o **número do processo** e o **assunto** e envia notificações nativas na área de trabalho.
 
-## Funcionalidades
+---
 
-- Painel, listas, busca, filtros, atribuídos, novos, marcadores, Kanban, prazos e históricos.
-- Login pelo Supabase Auth, RLS, Realtime e notificações com níveis `AVISO`, `NUMERO` e `ASSUNTO`.
-- Agente local somente leitura, com login manual no SEI, paginação, proxy, validação da coleta e agendamento sem sobreposição.
-- Sincronização atômica e idempotente; a linha de base inicial não cria uma avalanche de eventos.
-- Uma saída da unidade só é confirmada após duas ausências em retratos completos consecutivos.
-- Campos internos do CRM separados dos dados observados no SEI.
-- Testes unitários, de componentes, integração SQL e E2E responsivo.
+## ✨ Funcionalidades
 
-O agente não contém operações para movimentar, atribuir, marcar, assinar ou modificar processos no SEI.
+- 🔔 **Notificações Nativas no Sistema**: Avisa na tela do computador assim que um novo processo entra na caixa da sua unidade, com número e assunto em destaque.
+- ⚡ **Acesso Direto ao Processo**: Clicar na notificação ou no card da lista abre a página do processo diretamente no SEI.
+- 🚀 **Login Assistido de 1 Clique**: Botão "Abrir SEI" no popup para abrir/focar a tela de controle do sistema oficial.
+- 🔍 **Busca Rápida**: Filtre processos por número ou palavras-chave do assunto.
+- ⚙️ **Configurações Flexíveis**: Ajuste o intervalo de checagem automática (1, 2, 5, 10, 15 min), ative/desative som e notificações.
+- 🪶 **Ultra Leve**: Sem banco de dados externo, sem servidores locais rodando no terminal, sem necessidade de logins paralelos por robôs — a extensão aproveita sua própria sessão ativa no navegador.
 
-## Estrutura
+---
 
-```text
-apps/web/       Aplicação React + Vite
-agent/          Agente local Node.js + Playwright
-packages/core/  Contratos Zod e reconciliação
-supabase/       Migrations, RLS, RPCs, Realtime e testes pgTAP
-tests/e2e/      Fluxos críticos da interface
+## 📥 Como Instalar no Navegador (2 passos)
+
+### 1. Gerar os arquivos da extensão
+```bash
+npm run build
 ```
+Isso criará a pasta `dist/` pronta para ser carregada no navegador.
 
-## Como instalar e usar
+### 2. Carregar no Google Chrome, Edge ou Brave
 
-O passo a passo completo está em [INSTALACAO_E_USO.md](INSTALACAO_E_USO.md). Ele cobre requisitos, Supabase, configuração da PWA e do agente, primeiro login, execução contínua, proxy, TLS e solução de problemas.
+1. Abra o navegador e acesse a tela de extensões:
+   - No **Google Chrome**: `chrome://extensions`
+   - No **Microsoft Edge**: `edge://extensions`
+   - No **Brave**: `brave://extensions`
+2. Ative a chave **"Modo do desenvolvedor"** (no canto superior direito).
+3. Clique no botão **"Carregar sem compactação"** (ou *"Load unpacked"*).
+4. Selecione a pasta **`dist`** dentro da pasta deste projeto (`CRM-SEI/dist`).
+5. Fixe o ícone do **SEI Notifier** na barra de ferramentas do seu navegador para fácil acesso!
 
-Para experimentar apenas a interface em modo demonstração:
+---
+
+## 🛠️ Comandos de Desenvolvimento
 
 ```bash
-npm install
-npm run dev
+# Executa a suíte de testes unitários
+npm test
+
+# Valida os tipos TypeScript
+npm run typecheck
+
+# Compila a extensão para a pasta dist/
+npm run build
 ```
 
-Acesse `http://localhost:5173`.
+---
 
-## Validação do projeto
+## 🔒 Privacidade e Segurança
 
-```bash
-npm run verify
-npm run test:e2e
-npm audit
-```
-
-Os testes SQL exigem a Supabase CLI e um ambiente de contêineres:
-
-```bash
-supabase start
-supabase db reset
-supabase test db
-supabase db lint --local --level warning
-```
-
-Consulte também [supabase/README.md](supabase/README.md) para o contrato da RPC e as garantias do banco.
-
-## Limites deliberados
-
-- Nenhum documento, PDF, anexo, assinatura ou conteúdo integral é copiado.
-- O Kanban e os campos internos nunca alteram o SEI.
-- O PWA mantém em cache apenas o shell e os recursos estáticos; respostas da API não ficam disponíveis offline.
-- A coleta pausa quando o computador que executa o agente está desligado.
-- Notificações com o PWA totalmente fechado exigem uma evolução com Web Push.
-- Os seletores do SEI devem ser homologados na instalação real antes do uso operacional.
+- A extensão opera em modo **somente leitura**.
+- Não salva dados em servidores externos nem em nuvem.
+- Os dados de processos e preferências ficam armazenados exclusivamente na memória local do seu próprio navegador (`chrome.storage.local`).
