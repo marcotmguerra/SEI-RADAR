@@ -1,0 +1,262 @@
+/*
+ * Tema "Teal + Coral + Sand": teal como cor de marca e navegacao, coral como
+ * acento energetico das acoes de destaque, e areia nos blocos suaves.
+ *
+ * Componentes compartilhados consomem os papeis semanticos definidos aqui.
+ */
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  src: url('/fonts/BricolageGrotesque-Variable.ttf') format('truetype-variations');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Figtree';
+  src: url('/fonts/Figtree-Variable.ttf') format('truetype-variations');
+  font-weight: 300 900;
+  font-display: swap;
+}
+
+:root {
+  /* --- Primitivos de marca ---------------------------------------------- */
+  --palette-teal-700: #0f766e;
+  --palette-teal-800: #0b5f58;
+  --palette-teal-300: #2dd4bf;
+  --palette-teal-200: #5eead4;
+  --palette-coral-500: #ff7f50;
+  --palette-coral-700: #bc4f2e;
+  --palette-coral-800: #9d3f27;
+  --palette-sand-100: #f5e6ca;
+  --palette-ink-950: #0c1c26;
+  --palette-success-700: #0e7c63;
+  --palette-success-800: #0b5f4c;
+  --palette-danger-700: #b3261e;
+
+  /* --- Tokens semanticos: foundation ------------------------------------ */
+  --color-background-default: #faf7f2;
+  --color-background-subtle: #f5efe6;
+  --color-surface-raised: #fffdf9;
+  --color-surface-overlay: #fffaf5;
+  --color-surface-sunken: #f1ece4;
+
+  /* --- Tokens semanticos: fills ----------------------------------------- */
+  --color-fill-primary-default: var(--palette-teal-700);
+  --color-fill-primary-hover: var(--palette-teal-800);
+  --color-fill-primary-disabled: #607974;
+  --color-fill-primary-subtle: rgba(15, 118, 110, 0.12);
+  --color-fill-primary-muted: rgba(15, 118, 110, 0.2);
+  --color-fill-secondary-default: var(--palette-sand-100);
+  --color-fill-secondary-subtle: rgba(245, 230, 202, 0.55);
+  --color-fill-accent-default: var(--palette-coral-700);
+  --color-fill-accent-hover: var(--palette-coral-800);
+  --color-fill-accent-disabled: #8c6c60;
+  --color-fill-accent-subtle: rgba(255, 127, 80, 0.18);
+  --color-fill-danger-default: var(--palette-danger-700);
+  --color-fill-danger-subtle: rgba(179, 38, 30, 0.08);
+  --color-fill-success-default: var(--palette-success-700);
+  --color-fill-inverse-default: var(--color-text-primary-default);
+  --color-fill-inverse-hover: var(--color-fill-primary-default);
+
+  /* --- Tokens semanticos: border ---------------------------------------- */
+  --color-border-subtle: #ebe4da;
+  --color-border-default: #ded6cb;
+  --color-border-strong: #929b98;
+  --color-border-focus: var(--palette-teal-700);
+  --color-border-danger-default: var(--palette-danger-700);
+
+  /* --- Tokens semanticos: text e icon ----------------------------------- */
+  --color-text-primary-default: var(--palette-ink-950);
+  --color-text-primary-hover: var(--palette-teal-800);
+  --color-text-primary-active: var(--palette-teal-700);
+  --color-text-primary-disabled: #7d8987;
+  --color-text-secondary-default: #526166;
+  --color-text-placeholder: #687478;
+  --color-text-inverse: #fffaf5;
+  --color-text-on-color: #fffaf5;
+  --color-text-on-accent: #fffaf5;
+  --color-text-on-inverse: var(--color-background-default);
+  --color-text-danger: var(--palette-danger-700);
+  --color-text-success: var(--palette-success-800);
+  --color-icon-primary: var(--palette-ink-950);
+  --color-icon-secondary: #5f6b70;
+  --color-icon-decorative: var(--palette-teal-700);
+
+  /* --- Tokens semanticos: estado, midia e elevacao ---------------------- */
+  --color-state-hover: rgba(12, 28, 38, 0.04);
+  --color-state-selected: rgba(12, 28, 38, 0.08);
+  --color-overlay-scrim: rgba(12, 28, 38, 0.52);
+  --color-media-scrim-strong: rgba(12, 28, 38, 0.82);
+  --color-media-scrim-soft: rgba(12, 28, 38, 0.24);
+  --color-media-control-background: rgba(255, 250, 245, 0.92);
+  --color-media-control-text: var(--palette-ink-950);
+  --color-text-on-media: #fffaf5;
+  --color-text-on-media-muted: rgba(255, 250, 245, 0.86);
+  --shadow-overlay: 0 16px 40px rgba(12, 28, 38, 0.18);
+  --shadow-floating: 0 8px 24px rgba(12, 28, 38, 0.12);
+
+  /* Aliases de compatibilidade. */
+  --teal: var(--color-fill-primary-default);
+  --teal-hover: var(--color-fill-primary-hover);
+  --teal-12: var(--color-fill-primary-subtle);
+  --teal-20: var(--color-fill-primary-muted);
+  --sobre-marca: var(--color-text-on-color);
+  --coral: var(--palette-coral-500);
+  --coral-hover: var(--color-fill-accent-hover);
+  --coral-18: var(--color-fill-accent-subtle);
+  --sand: var(--color-fill-secondary-default);
+  --sand-55: var(--color-fill-secondary-subtle);
+  --tinta: var(--color-text-primary-default);
+  --texto-suave: var(--color-text-secondary-default);
+  --fundo: var(--color-background-default);
+  --superficie: var(--color-surface-raised);
+  --borda: var(--color-border-default);
+  --branco: var(--color-text-on-media);
+  --verde: var(--color-fill-success-default);
+  --erro: var(--color-fill-danger-default);
+  --erro-08: var(--color-fill-danger-subtle);
+  --tinta-08: var(--color-state-selected);
+  --tinta-04: var(--color-state-hover);
+
+  /* --- Tipografia -------------------------------------------------------- */
+  --fonte-display: 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --fonte-corpo: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --texto-titulo-pagina: 700 24px/1.15 var(--fonte-display);
+  --texto-titulo-secao: 700 12px/1.2 var(--fonte-corpo);
+  --texto-nome-item: 600 16px/1.3 var(--fonte-corpo);
+  --texto-corpo: 400 15px/1.45 var(--fonte-corpo);
+  --texto-secundario: 400 14px/1.4 var(--fonte-corpo);
+  --texto-rotulo: 600 13px/1.2 var(--fonte-corpo);
+  --texto-metadado: 500 12px/1.2 var(--fonte-corpo);
+  --tracking-secao: 0.08em;
+
+  /* --- Escala de espacamento -------------------------------------------- */
+  --e1: 4px;
+  --e2: 8px;
+  --e3: 12px;
+  --e4: 16px;
+  --e6: 24px;
+  --e8: 32px;
+  --e12: 48px;
+  --e16: 64px;
+  --e5: var(--e6);
+  --e7: var(--e8);
+
+  /* Alvo minimo de toque. */
+  --alvo-toque: 48px;
+
+  /* --- Formas ------------------------------------------------------------ */
+  --raio-cartao: 12px;
+  --raio-controle: 8px;
+  --raio-pequeno: 6px;
+  --raio-pilula: 999px;
+  --raio-campo: var(--raio-controle);
+  --raio-chip: var(--raio-pilula);
+  --raio-selo: var(--raio-pilula);
+  --raio-card: var(--raio-cartao);
+  --raio-sm: var(--raio-pequeno);
+
+  /* --- Alturas de controle ---------------------------------------------- */
+  --altura-controle: 48px;
+  --altura-controle-sm: 44px;
+  --altura-controle-xs: 36px;
+
+  /* --- Bordas e sombras -------------------------------------------------- */
+  --borda-hairline: 1px solid var(--color-border-default);
+  --borda-divisor: 1px solid var(--color-border-subtle);
+  --sombra-cartao: none;
+  --sombra-1: 0 1px 2px rgba(12, 28, 38, 0.06);
+  --sombra-elevada: var(--shadow-overlay);
+
+  /* --- Camadas ----------------------------------------------------------- */
+  --z-header-sticky: 40;
+  --z-navigation-fixed: 50;
+  --z-dialog-backdrop: 60;
+  --z-dialog-content: 61;
+  --z-menu-overlay: 70;
+  --z-drawer-backdrop: 80;
+  --z-drawer-content: 81;
+  --z-toast: 90;
+
+  /* --- Layout ------------------------------------------------------------ */
+  --largura-max-conteudo: 1180px;
+  --gutter: var(--e4);
+  --gap-secao: var(--e6);
+
+  /* --- Transicoes -------------------------------------------------------- */
+  --transicao: 160ms cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+:root[data-theme='escuro'] {
+  --color-background-default: #0d1719;
+  --color-background-subtle: #111d1d;
+  --color-surface-raised: #15211f;
+  --color-surface-overlay: #1b2926;
+  --color-surface-sunken: #101a1a;
+
+  --color-fill-primary-default: var(--palette-teal-300);
+  --color-fill-primary-hover: var(--palette-teal-200);
+  --color-fill-primary-disabled: #396a63;
+  --color-fill-primary-subtle: rgba(45, 212, 191, 0.14);
+  --color-fill-primary-muted: rgba(45, 212, 191, 0.26);
+  --color-fill-secondary-default: #1b2a28;
+  --color-fill-secondary-subtle: rgba(255, 250, 245, 0.07);
+  --color-fill-accent-default: #ff9a70;
+  --color-fill-accent-hover: #ffb090;
+  --color-fill-accent-disabled: #805b50;
+  --color-fill-accent-subtle: rgba(255, 127, 80, 0.22);
+  --color-fill-danger-default: #f87171;
+  --color-fill-danger-subtle: rgba(248, 113, 113, 0.12);
+  --color-fill-success-default: #34d399;
+
+  --color-border-subtle: #232f2d;
+  --color-border-default: #33413d;
+  --color-border-strong: #74817d;
+  --color-border-focus: var(--palette-teal-300);
+  --color-border-danger-default: #f87171;
+
+  --color-text-primary-default: #eef2f1;
+  --color-text-primary-hover: var(--palette-teal-200);
+  --color-text-primary-active: var(--palette-teal-300);
+  --color-text-primary-disabled: #75827f;
+  --color-text-secondary-default: #aebbb8;
+  --color-text-placeholder: #9aa8ac;
+  --color-text-inverse: #fffaf5;
+  --color-text-on-color: #06231f;
+  --color-text-on-accent: #291008;
+  --color-text-danger: #f87171;
+  --color-text-success: #34d399;
+  --color-icon-primary: #eef2f1;
+  --color-icon-secondary: #aebbb8;
+  --color-icon-decorative: var(--palette-teal-300);
+
+  --color-state-hover: rgba(255, 250, 245, 0.05);
+  --color-state-selected: rgba(255, 250, 245, 0.09);
+  --color-overlay-scrim: rgba(3, 10, 11, 0.64);
+  --color-media-control-background: rgba(255, 250, 245, 0.92);
+  --shadow-overlay: 0 16px 40px rgba(0, 0, 0, 0.52);
+  --shadow-floating: 0 8px 24px rgba(0, 0, 0, 0.36);
+  --sombra-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  color-scheme: dark;
+}
+
+@media (min-width: 600px) {
+  :root {
+    --gutter: var(--e5);
+    --gap-secao: var(--e8);
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --gutter: var(--e6);
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --gutter: var(--e8);
+  }
+}
