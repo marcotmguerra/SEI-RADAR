@@ -21,15 +21,30 @@ describe('Storage Manager', () => {
     expect(config.intervaloMinutos).toBe(5);
     expect(config.somAtivo).toBe(true);
     expect(config.notificacoesAtivas).toBe(true);
+    expect(config.regraNotificacao).toBe('todos');
+    expect(config.usuarioSigla).toBe('');
+    expect(config.marcadoresNotificacao).toEqual([]);
+    expect(config.primeiraCargaRealizada).toBe(false);
     expect(config.urlControle).toContain('controlador.php?acao=procedimento_controlar');
   });
 
   it('salva e recupera alterações de configuração', async () => {
-    await salvarConfiguracao({ intervaloMinutos: 10, somAtivo: false });
+    await salvarConfiguracao({
+      intervaloMinutos: 10,
+      somAtivo: false,
+      regraNotificacao: 'atribuidos_e_marcadores',
+      usuarioSigla: 'MG123456',
+      marcadoresNotificacao: ['Urgente', 'Licitação'],
+      primeiraCargaRealizada: true,
+    });
     const atualizado = await obterConfiguracao();
     expect(atualizado.intervaloMinutos).toBe(10);
     expect(atualizado.somAtivo).toBe(false);
     expect(atualizado.notificacoesAtivas).toBe(true);
+    expect(atualizado.regraNotificacao).toBe('atribuidos_e_marcadores');
+    expect(atualizado.usuarioSigla).toBe('MG123456');
+    expect(atualizado.marcadoresNotificacao).toEqual(['Urgente', 'Licitação']);
+    expect(atualizado.primeiraCargaRealizada).toBe(true);
   });
 
   it('gerencia lista de processos e marcação de lidos', async () => {

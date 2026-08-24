@@ -1,4 +1,4 @@
-import { parseProcessosHtml } from '../shared/sei-parser';
+import { parseProcessosHtml, extrairUsuarioLogado } from '../shared/sei-parser';
 import type { MensagemRuntime, ProcessoSei } from '../types';
 
 /**
@@ -26,6 +26,7 @@ const sincronizarPaginaSei = () => {
     const html = document.documentElement.outerHTML;
     const urlAtual = window.location.href;
     const processos = parseProcessosHtml(html, urlAtual);
+    const usuarioLogado = extrairUsuarioLogado(document) || undefined;
 
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       const mensagem: MensagemRuntime = {
@@ -33,6 +34,7 @@ const sincronizarPaginaSei = () => {
         processos,
         urlAtual,
         autenticado,
+        usuarioLogado,
       };
 
       chrome.runtime.sendMessage(mensagem).catch(() => {
@@ -57,7 +59,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
     if (msg.tipo === 'EXTRAIR_DOM_SEI') {
       const autenticado = verificarAutenticacao();
       const processos = parseProcessosHtml(document.documentElement.outerHTML, window.location.href);
-      sendResponse({ autenticado, processos, urlAtual: window.location.href });
+      const usuarioLogado = extrairUsuarioLogado(document) || undefined;
+      sendResponse({ autenticado, processos, urlAtual: window.location.href, usuarioLogado });
     }
   });
 }

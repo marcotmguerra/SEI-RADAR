@@ -1,4 +1,4 @@
-import { parseProcessosHtml } from '../shared/sei-parser';
+import { parseProcessosHtml, extrairUsuarioLogado } from '../shared/sei-parser';
 import {
   obterConfiguracao,
   obterProcessos,
@@ -6,23 +6,128 @@ import {
   salvarStatusSessao,
   salvarConfiguracao,
 } from '../shared/storage';
-import type { MensagemRuntime, ProcessoSei } from '../types';
+import type { ConfiguracaoExtensao, MensagemRuntime, ProcessoSei } from '../types';
 
 const NOME_ALARME = 'sei_alarme_verificacao';
 
 // Mapa em memória de notificações para URLs de destino
 const linksNotificacoes = new Map<string, string>();
 
+// Controle de cooldown para alertas de desconexão/instabilidade (máximo 1 a cada 30 min para o mesmo status)
+let ultimoAlertaDesconexao: { status: StatusSessao; timestamp: number } | null = null;
+
 /**
- * Atualiza o badge do ícone da extensão com a contagem de não lidos
+ * Atualiza o badge do ícone da extensão com a contagem de não lidos ou status de erro/desconexão
  */
-const atualizarBadge = async (processos: ProcessoSei[]) => {
+const atualizarBadge = async (processos: ProcessoSei[], status: StatusSessao = 'conectado') => {
   if (typeof chrome === 'undefined' || !chrome.action) return;
+
+  if (status === 'desconectado') {
+    await chrome.action.setBadgeText({ text: 'OFF' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#f59e0b' });
+    return;
+  }
+
+  if (status === 'erro') {
+    await chrome.action.setBadgeText({ text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+    return;
+  }
+
   const naoLidos = processos.filter((p) => !p.lido).length;
   await chrome.action.setBadgeText({
     text: naoLidos > 0 ? (naoLidos > 99 ? '99+' : String(naoLidos)) : '',
   });
   await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
+};
+
+/**
+ * Dispara notificação nativa quando a sessão expirar ou o SEI ficar instável
+ */
+const notificarDesconexaoOuInstabilidade = async (
+  novoStatus: 'desconectado' | 'erro',
+  config: ConfiguracaoExtensao,
+  motivo?: string
+) => {
+  if (typeof chrome === 'undefined' || !chrome.notifications) return;
+  if (!config.notificacoesAtivas) return;
+
+  const agora = Date.now();
+  // Cooldown de 30 minutos para evitar spam contínuo
+  if (
+    ultimoAlertaDesconexao &&
+    ultimoAlertaDesconexao.status === novoStatus &&
+    agora - ultimoAlertaDesconexao.timestamp < 30 * 60 * 1000
+  ) {
+    return;
+  }
+
+  ultimoAlertaDesconexao = { status: novoStatus, timestamp: agora };
+
+  const idNotificacao = `sei_alerta_status_${novoStatus}_${agora}`;
+  linksNotificacoes.set(idNotificacao, config.urlControle);
+
+  const titulo =
+    novoStatus === 'desconectado'
+      ? '⚠️ Sessão do SEI Finalizada'
+      : '⚠️ SEI Instável ou Indisponível';
+
+  const mensagem =
+    novoStatus === 'desconectado'
+      ? 'Sua sessão no SEI expirou. Clique aqui para entrar novamente e manter o monitoramento ativo.'
+      : motivo
+      ? `Falha de conexão com o SEI (${motivo}). O sistema pode estar temporariamente fora do ar.`
+      : 'Não foi possível conectar ao SEI. O sistema pode estar temporariamente fora do ar.';
+
+  try {
+    await chrome.notifications.create(idNotificacao, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+      title: titulo,
+      message: mensagem,
+      priority: 2,
+      silent: !config.somAtivo,
+    });
+  } catch (erro) {
+    console.error('Erro ao notificar desconexão/instabilidade:', erro);
+  }
+};
+
+/**
+ * Verifica se um processo deve disparar notificação conforme as preferências do usuário
+ */
+export const deveNotificarProcesso = (processo: ProcessoSei, config: ConfiguracaoExtensao): boolean => {
+  if (!config.notificacoesAtivas) return false;
+
+  if (config.regraNotificacao === 'todos') {
+    return true;
+  }
+
+  const siglaConfigurada = (config.usuarioSigla || '').trim().toLowerCase();
+  const atribuido = (processo.atribuidoPara || '').trim().toLowerCase();
+
+  const ehAtribuidoAMim =
+    siglaConfigurada.length > 0 &&
+    atribuido.length > 0 &&
+    (atribuido.includes(siglaConfigurada) || siglaConfigurada.includes(atribuido));
+
+  if (config.regraNotificacao === 'atribuidos') {
+    return ehAtribuidoAMim;
+  }
+
+  if (config.regraNotificacao === 'atribuidos_e_marcadores') {
+    if (ehAtribuidoAMim) return true;
+    if (Array.isArray(processo.marcadores) && Array.isArray(config.marcadoresNotificacao)) {
+      const marcadoresInteresse = config.marcadoresNotificacao.map((m) => m.toLowerCase().trim());
+      const temMarcador = processo.marcadores.some((m) =>
+        marcadoresInteresse.includes(m.toLowerCase().trim())
+      );
+      if (temMarcador) return true;
+    }
+    return false;
+  }
+
+  return true;
 };
 
 /**
@@ -34,9 +139,21 @@ const notificarNovoProcesso = async (processo: ProcessoSei, somAtivo: boolean) =
   const idNotificacao = `sei_proc_${processo.numero}_${Date.now()}`;
   linksNotificacoes.set(idNotificacao, processo.link);
 
-  const mensagem = processo.assunto
+  const tags: string[] = [];
+  if (processo.atribuidoPara) {
+    tags.push(`👤 ${processo.atribuidoPara}`);
+  }
+  if (processo.marcadores && processo.marcadores.length > 0) {
+    tags.push(`🏷️ ${processo.marcadores.join(', ')}`);
+  }
+
+  let mensagem = processo.assunto
     ? `Assunto: ${processo.assunto}`
     : 'Novo processo recebido na unidade.';
+
+  if (tags.length > 0) {
+    mensagem = `${tags.join(' | ')}\n${mensagem}`;
+  }
 
   try {
     await chrome.notifications.create(idNotificacao, {
@@ -74,6 +191,11 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
         detectadoEm: existente.detectadoEm,
         lido: existente.lido,
         assunto: coletado.assunto || existente.assunto,
+        atribuidoPara: coletado.atribuidoPara || existente.atribuidoPara,
+        marcadores:
+          coletado.marcadores && coletado.marcadores.length > 0
+            ? coletado.marcadores
+            : existente.marcadores,
       });
     }
   }
@@ -85,25 +207,24 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
     }
   }
 
+  const ehPrimeiraCarga = !config.primeiraCargaRealizada && processosArmazenados.length === 0;
+
   await salvarProcessos(listaAtualizada);
   await salvarStatusSessao('conectado');
-  await atualizarBadge(listaAtualizada);
+  ultimoAlertaDesconexao = null;
+  await atualizarBadge(listaAtualizada, 'conectado');
+
+  if (ehPrimeiraCarga) {
+    await salvarConfiguracao({ primeiraCargaRealizada: true });
+    // Na primeira carga histórica, NÃO dispara notificações desktop ("Os SEIs que já estavam não sobem")
+    return { novos: 0, total: listaAtualizada.length };
+  }
 
   if (config.notificacoesAtivas && novosProcessos.length > 0) {
-    if (novosProcessos.length > 3 && processosArmazenados.length === 0) {
-      const idNotificacao = `sei_lote_${Date.now()}`;
-      linksNotificacoes.set(idNotificacao, config.urlControle);
-      await chrome.notifications.create(idNotificacao, {
-        type: 'basic',
-        iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
-        title: `🔔 SEI Conectado`,
-        message: `${novosProcessos.length} processos encontrados na sua caixa do SEI.`,
-        priority: 2,
-      });
-    } else {
-      for (const novo of novosProcessos) {
-        await notificarNovoProcesso(novo, config.somAtivo);
-      }
+    const processosParaNotificar = novosProcessos.filter((p) => deveNotificarProcesso(p, config));
+
+    for (const novo of processosParaNotificar) {
+      await notificarNovoProcesso(novo, config.somAtivo);
     }
   }
 
@@ -142,14 +263,23 @@ export const executarVerificacaoSei = async (): Promise<{
             autenticado: boolean;
             processos: ProcessoSei[];
             urlAtual?: string;
+            usuarioLogado?: string;
           }>(aba.id, { tipo: 'EXTRAIR_DOM_SEI' });
 
           if (respostaTab && respostaTab.autenticado) {
+            const atualizacoes: Partial<ConfiguracaoExtensao> = {};
             if (respostaTab.urlAtual && respostaTab.urlAtual.includes('controlador.php')) {
-              await salvarConfiguracao({ urlControle: respostaTab.urlAtual });
+              atualizacoes.urlControle = respostaTab.urlAtual;
+            }
+            if (respostaTab.usuarioLogado && !config.usuarioSigla) {
+              atualizacoes.usuarioSigla = respostaTab.usuarioLogado;
+            }
+            if (Object.keys(atualizacoes).length > 0) {
+              await salvarConfiguracao(atualizacoes);
             }
             const resultado = await processarNovosProcessos(respostaTab.processos || []);
             await salvarStatusSessao('conectado');
+            ultimoAlertaDesconexao = null;
             return { sucesso: true, novos: resultado.novos, total: resultado.total };
           }
         } catch {
@@ -162,9 +292,6 @@ export const executarVerificacaoSei = async (): Promise<{
   }
 
   // Já existe uma aba do SEI aberta, mas nenhuma respondeu como autenticada ainda
-  // (ex.: página em transição logo após o login). Evita disparar uma requisição
-  // paralela ao servidor nesse momento, pois isso pode colidir com a sessão real
-  // da aba e derrubá-la. Aguarda a próxima verificação em vez de arriscar.
   if (existeAbaSei) {
     return { sucesso: false, novos: 0, total: 0, mensagem: 'Aguardando página do SEI carregar' };
   }
@@ -181,6 +308,9 @@ export const executarVerificacaoSei = async (): Promise<{
 
     if (!resposta.ok) {
       await salvarStatusSessao('desconectado');
+      await notificarDesconexaoOuInstabilidade('desconectado', config, `HTTP ${resposta.status}`);
+      const processosArmazenados = await obterProcessos();
+      await atualizarBadge(processosArmazenados, 'desconectado');
       return { sucesso: false, novos: 0, total: 0, mensagem: `HTTP ${resposta.status}` };
     }
 
@@ -196,12 +326,21 @@ export const executarVerificacaoSei = async (): Promise<{
 
     if (isLogin) {
       await salvarStatusSessao('desconectado');
+      await notificarDesconexaoOuInstabilidade('desconectado', config);
+      const processosArmazenados = await obterProcessos();
+      await atualizarBadge(processosArmazenados, 'desconectado');
       return { sucesso: false, novos: 0, total: 0, mensagem: 'Faça login no SEI' };
+    }
+
+    const usuarioLogado = extrairUsuarioLogado(html);
+    if (usuarioLogado && !config.usuarioSigla) {
+      await salvarConfiguracao({ usuarioSigla: usuarioLogado });
     }
 
     const processosColetados = parseProcessosHtml(html, config.urlControle);
     const resultado = await processarNovosProcessos(processosColetados);
     await salvarStatusSessao('conectado');
+    ultimoAlertaDesconexao = null;
 
     return {
       sucesso: true,
@@ -211,6 +350,9 @@ export const executarVerificacaoSei = async (): Promise<{
   } catch (erro: any) {
     console.error('Erro na verificação do SEI:', erro);
     await salvarStatusSessao('erro');
+    await notificarDesconexaoOuInstabilidade('erro', config, erro?.message);
+    const processosArmazenados = await obterProcessos();
+    await atualizarBadge(processosArmazenados, 'erro');
     return {
       sucesso: false,
       novos: 0,
@@ -300,6 +442,8 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
               link: config.urlControle,
               detectadoEm: new Date().toISOString(),
               lido: false,
+              atribuidoPara: config.usuarioSigla || 'MG123456',
+              marcadores: ['Urgente', 'Manutenção'],
             },
             config.somAtivo
           );
@@ -313,8 +457,18 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
           break;
         }
         case 'NOTIFICAR_PAGINA_SEI_CARREGADA': {
+          const atualizacoesConfig: Partial<ConfiguracaoExtensao> = {};
           if (mensagem.urlAtual && mensagem.urlAtual.includes('controlador.php')) {
-            await salvarConfiguracao({ urlControle: mensagem.urlAtual });
+            atualizacoesConfig.urlControle = mensagem.urlAtual;
+          }
+          if (mensagem.usuarioLogado) {
+            const configAtual = await obterConfiguracao();
+            if (!configAtual.usuarioSigla) {
+              atualizacoesConfig.usuarioSigla = mensagem.usuarioLogado;
+            }
+          }
+          if (Object.keys(atualizacoesConfig).length > 0) {
+            await salvarConfiguracao(atualizacoesConfig);
           }
           if (mensagem.autenticado || (Array.isArray(mensagem.processos) && mensagem.processos.length > 0)) {
             await processarNovosProcessos(mensagem.processos || []);

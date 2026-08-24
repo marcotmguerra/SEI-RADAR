@@ -10,6 +10,9 @@ import {
   FileText,
   Clock,
   CheckCheck,
+  User,
+  Tag,
+  X,
 } from 'lucide-react';
 import {
   obterConfiguracao,
@@ -19,7 +22,7 @@ import {
   marcarTodosProcessosComoLidos,
   salvarConfiguracao,
 } from '../shared/storage';
-import type { ConfiguracaoExtensao, ProcessoSei, StatusSessao } from '../types';
+import type { ConfiguracaoExtensao, ProcessoSei, StatusSessao, RegraNotificacao } from '../types';
 
 const formatarHora = (dataIso: string): string => {
   try {
@@ -36,6 +39,13 @@ const formatarHora = (dataIso: string): string => {
   }
 };
 
+const ehMeuProcesso = (proc: ProcessoSei, sigla?: string): boolean => {
+  if (!sigla || !sigla.trim() || !proc.atribuidoPara) return false;
+  const s = sigla.trim().toLowerCase();
+  const a = proc.atribuidoPara.trim().toLowerCase();
+  return a.includes(s) || s.includes(a);
+};
+
 export const PopupApp: React.FC = () => {
   const [processos, setProcessos] = useState<ProcessoSei[]>([]);
   const [config, setConfig] = useState<ConfiguracaoExtensao | null>(null);
@@ -43,7 +53,9 @@ export const PopupApp: React.FC = () => {
   const [ultimaVerificacao, setUltimaVerificacao] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
-  const [filtro, setFiltro] = useState<'todos' | 'nao_lidos'>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'meus' | 'nao_lidos'>('todos');
+  const [marcadorFiltro, setMarcadorFiltro] = useState<string | null>(null);
+  const [novoMarcadorInput, setNovoMarcadorInput] = useState('');
   const [exibindoConfig, setExibindoConfig] = useState(false);
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
 
@@ -66,7 +78,6 @@ export const PopupApp: React.FC = () => {
 
   useEffect(() => {
     carregarDados();
-    // Ao abrir o popup, dispara verificação em segundo plano para atualizar status de login
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime
         .sendMessage({ tipo: 'VERIFICAR_AGORA' })
@@ -136,21 +147,81 @@ export const PopupApp: React.FC = () => {
     }
   };
 
+  // Todos os marcadores únicos detectados na base
+  const todosMarcadores = useMemo(() => {
+    const set = new Set<string>();
+    for (const proc of processos) {
+      if (proc.marcadores) {
+        for (const m of proc.marcadores) {
+          if (m && m.trim()) set.add(m.trim());
+        }
+      }
+    }
+    if (config?.marcadoresNotificacao) {
+      for (const m of config.marcadoresNotificacao) {
+        if (m && m.trim()) set.add(m.trim());
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
+  }, [processos, config?.marcadoresNotificacao]);
+
+  // Contagem de processos atribuídos a mim
+  const totalMeus = useMemo(() => {
+    return processos.filter((p) => ehMeuProcesso(p, config?.usuarioSigla)).length;
+  }, [processos, config?.usuarioSigla]);
+
+  const totalNaoLidos = useMemo(() => {
+    return processos.filter((p) => !p.lido).length;
+  }, [processos]);
+
   // Filtra e ordena processos
   const processosFiltrados = useMemo(() => {
     return processos
       .filter((p) => {
-        if (filtro === 'nao_lidos' && p.lido) return false;
+        // Filtro de aba/categoria
+        if (filtroTipo === 'nao_lidos' && p.lido) return false;
+        if (filtroTipo === 'meus' && !ehMeuProcesso(p, config?.usuarioSigla)) return false;
+
+        // Filtro de Marcador
+        if (marcadorFiltro) {
+          if (!p.marcadores || !p.marcadores.includes(marcadorFiltro)) return false;
+        }
+
+        // Filtro de busca textual
         if (!termoBusca.trim()) return true;
         const termo = termoBusca.toLowerCase();
         const num = p.numero.toLowerCase();
         const assunto = (p.assunto || '').toLowerCase();
-        return num.includes(termo) || assunto.includes(termo);
+        const atribuicao = (p.atribuidoPara || '').toLowerCase();
+        const marcadoresTexto = (p.marcadores || []).join(' ').toLowerCase();
+
+        return (
+          num.includes(termo) ||
+          assunto.includes(termo) ||
+          atribuicao.includes(termo) ||
+          marcadoresTexto.includes(termo)
+        );
       })
       .sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime());
-  }, [processos, filtro, termoBusca]);
+  }, [processos, filtroTipo, marcadorFiltro, termoBusca, config?.usuarioSigla]);
 
-  const totalNaoLidos = processos.filter((p) => !p.lido).length;
+  const alternarMarcadorNotificacao = (marcador: string) => {
+    if (!config) return;
+    const lista = config.marcadoresNotificacao || [];
+    const existe = lista.includes(marcador);
+    const atualizada = existe ? lista.filter((m) => m !== marcador) : [...lista, marcador];
+    setConfig({ ...config, marcadoresNotificacao: atualizada });
+  };
+
+  const adicionarMarcadorPersonalizado = () => {
+    if (!config || !novoMarcadorInput.trim()) return;
+    const marcador = novoMarcadorInput.trim();
+    const lista = config.marcadoresNotificacao || [];
+    if (!lista.includes(marcador)) {
+      setConfig({ ...config, marcadoresNotificacao: [...lista, marcador] });
+    }
+    setNovoMarcadorInput('');
+  };
 
   return (
     <div className="popup-container">
@@ -204,9 +275,97 @@ export const PopupApp: React.FC = () => {
         </div>
       </div>
 
+      {status === 'desconectado' && !exibindoConfig && (
+        <div className="connection-banner warning">
+          <span>⚠️ Sessão finalizada. Faça login para continuar recebendo notificações.</span>
+          <button className="btn-banner-action" onClick={() => handleAbrirSei()}>
+            Fazer Login
+          </button>
+        </div>
+      )}
+
+      {status === 'erro' && !exibindoConfig && (
+        <div className="connection-banner error">
+          <span>⚠️ SEI instável ou fora do ar. Tentando reconectar...</span>
+          <button className="btn-banner-action" onClick={handleVerificarAgora}>
+            Reconectar
+          </button>
+        </div>
+      )}
+
       {exibindoConfig && config ? (
         /* Tela de Configurações */
         <div className="settings-view">
+          <div className="setting-group">
+            <label className="setting-label">Minha Sigla / Usuário no SEI</label>
+            <input
+              type="text"
+              className="setting-input"
+              value={config.usuarioSigla}
+              onChange={(e) => setConfig({ ...config, usuarioSigla: e.target.value.trim() })}
+              placeholder="Ex: MG123456 ou MARCO.GUERRA"
+            />
+            <span className="setting-hint">
+              Utilizada para filtrar os processos atribuídos a você. Se deixar em branco, tentará capturar automaticamente do SEI.
+            </span>
+          </div>
+
+          <div className="setting-group">
+            <label className="setting-label">Regra de Notificações</label>
+            <select
+              className="setting-select"
+              value={config.regraNotificacao}
+              onChange={(e) =>
+                setConfig({ ...config, regraNotificacao: e.target.value as RegraNotificacao })
+              }
+            >
+              <option value="todos">Todos os novos processos recebidos</option>
+              <option value="atribuidos">Apenas novos processos atribuídos a mim</option>
+              <option value="atribuidos_e_marcadores">
+                Atribuídos a mim OU com marcadores selecionados
+              </option>
+            </select>
+          </div>
+
+          {config.regraNotificacao === 'atribuidos_e_marcadores' && (
+            <div className="setting-group">
+              <label className="setting-label">Marcadores para Notificar</label>
+              <div className="markers-selection-wrap">
+                {todosMarcadores.map((m) => {
+                  const selecionado = (config.marcadoresNotificacao || []).includes(m);
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`marker-select-chip ${selecionado ? 'selected' : ''}`}
+                      onClick={() => alternarMarcadorNotificacao(m)}
+                    >
+                      <Tag size={10} />
+                      {m}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="add-marker-row">
+                <input
+                  type="text"
+                  className="setting-input"
+                  value={novoMarcadorInput}
+                  onChange={(e) => setNovoMarcadorInput(e.target.value)}
+                  placeholder="Digitar outro marcador..."
+                  onKeyDown={(e) => e.key === 'Enter' && adicionarMarcadorPersonalizado()}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary btn-compact"
+                  onClick={adicionarMarcadorPersonalizado}
+                >
+                  Adicionar
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="setting-group">
             <label className="setting-label">URL de Controle do SEI</label>
             <input
@@ -281,7 +440,7 @@ export const PopupApp: React.FC = () => {
               <input
                 type="text"
                 className="search-input"
-                placeholder="Buscar por número ou assunto..."
+                placeholder="Buscar por número, assunto, marcador..."
                 value={termoBusca}
                 onChange={(e) => setTermoBusca(e.target.value)}
               />
@@ -290,14 +449,20 @@ export const PopupApp: React.FC = () => {
             <div className="filters-row">
               <div className="filter-pills">
                 <button
-                  className={`filter-pill ${filtro === 'todos' ? 'active' : ''}`}
-                  onClick={() => setFiltro('todos')}
+                  className={`filter-pill ${filtroTipo === 'todos' ? 'active' : ''}`}
+                  onClick={() => setFiltroTipo('todos')}
                 >
                   Todos ({processos.length})
                 </button>
                 <button
-                  className={`filter-pill ${filtro === 'nao_lidos' ? 'active' : ''}`}
-                  onClick={() => setFiltro('nao_lidos')}
+                  className={`filter-pill ${filtroTipo === 'meus' ? 'active' : ''}`}
+                  onClick={() => setFiltroTipo('meus')}
+                >
+                  Atribuídos a Mim ({totalMeus})
+                </button>
+                <button
+                  className={`filter-pill ${filtroTipo === 'nao_lidos' ? 'active' : ''}`}
+                  onClick={() => setFiltroTipo('nao_lidos')}
                 >
                   Novos ({totalNaoLidos})
                 </button>
@@ -306,10 +471,36 @@ export const PopupApp: React.FC = () => {
               {totalNaoLidos > 0 && (
                 <button className="btn-mark-all" onClick={handleMarcarTodosLidos}>
                   <CheckCheck size={12} style={{ display: 'inline', marginRight: 3 }} />
-                  Marcar todos como lidos
+                  Marcar todos lidos
                 </button>
               )}
             </div>
+
+            {/* Chips de Marcadores */}
+            {todosMarcadores.length > 0 && (
+              <div className="marker-chips-row">
+                <button
+                  className={`marker-chip ${marcadorFiltro === null ? 'active' : ''}`}
+                  onClick={() => setMarcadorFiltro(null)}
+                >
+                  Todos Marcadores
+                </button>
+                {todosMarcadores.map((marcador) => {
+                  const ativo = marcadorFiltro === marcador;
+                  return (
+                    <button
+                      key={marcador}
+                      className={`marker-chip ${ativo ? 'active' : ''}`}
+                      onClick={() => setMarcadorFiltro(ativo ? null : marcador)}
+                    >
+                      <Tag size={10} style={{ marginRight: 3 }} />
+                      {marcador}
+                      {ativo && <X size={10} style={{ marginLeft: 3 }} />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <main className="process-list">
@@ -320,57 +511,83 @@ export const PopupApp: React.FC = () => {
                 <span>
                   {processos.length === 0
                     ? 'Clique em "Abrir SEI" ou no botão de atualizar (🔄) para sincronizar.'
-                    : 'Tente outro termo na busca.'}
+                    : filtroTipo === 'meus' && !config?.usuarioSigla
+                    ? 'Configure sua sigla nas opções (⚙️) para ver os processos atribuídos a você.'
+                    : 'Tente alterar os filtros ou termos da busca.'}
                 </span>
               </div>
             ) : (
-              processosFiltrados.map((proc) => (
-                <article
-                  key={proc.numero}
-                  className={`process-card ${!proc.lido ? 'unread' : ''}`}
-                  onClick={() => handleAbrirSei(proc.link)}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <div className="process-header">
-                    <a
-                      href={proc.link}
-                      className="process-number"
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAbrirSei(proc.link);
-                      }}
-                    >
-                      {proc.numero}
-                      <ExternalLink size={11} />
-                    </a>
-                    {!proc.lido && <span className="badge-new">Novo</span>}
-                  </div>
+              processosFiltrados.map((proc) => {
+                const ehMeu = ehMeuProcesso(proc, config?.usuarioSigla);
 
-                  <div className="process-subject">
-                    {proc.assunto || 'Sem assunto especificado'}
-                  </div>
-
-                  <div className="process-footer">
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <Clock size={11} />
-                      {formatarHora(proc.detectadoEm)}
-                    </span>
-
-                    {!proc.lido && (
-                      <button
-                        className="btn-read-toggle"
-                        onClick={(e) => handleMarcarLido(proc.numero, e)}
-                        title="Marcar como lido"
+                return (
+                  <article
+                    key={proc.numero}
+                    className={`process-card ${!proc.lido ? 'unread' : ''}`}
+                    onClick={() => handleAbrirSei(proc.link)}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <div className="process-header">
+                      <a
+                        href={proc.link}
+                        className="process-number"
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAbrirSei(proc.link);
+                        }}
                       >
-                        <CheckCircle size={12} />
-                        Marcar lido
-                      </button>
+                        {proc.numero}
+                        <ExternalLink size={11} />
+                      </a>
+
+                      <div className="process-badges">
+                        {proc.atribuidoPara && (
+                          <span className={`badge-attribution ${ehMeu ? 'mine' : ''}`}>
+                            <User size={10} style={{ marginRight: 2 }} />
+                            {proc.atribuidoPara}
+                          </span>
+                        )}
+                        {!proc.lido && <span className="badge-new">Novo</span>}
+                      </div>
+                    </div>
+
+                    <div className="process-subject">
+                      {proc.assunto || 'Sem assunto especificado'}
+                    </div>
+
+                    {proc.marcadores && proc.marcadores.length > 0 && (
+                      <div className="card-markers-row">
+                        {proc.marcadores.map((m) => (
+                          <span key={m} className="card-marker-badge">
+                            <Tag size={9} style={{ marginRight: 3 }} />
+                            {m}
+                          </span>
+                        ))}
+                      </div>
                     )}
-                  </div>
-                </article>
-              ))
+
+                    <div className="process-footer">
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Clock size={11} />
+                        {formatarHora(proc.detectadoEm)}
+                      </span>
+
+                      {!proc.lido && (
+                        <button
+                          className="btn-read-toggle"
+                          onClick={(e) => handleMarcarLido(proc.numero, e)}
+                          title="Marcar como lido"
+                        >
+                          <CheckCircle size={12} />
+                          Marcar lido
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })
             )}
           </main>
         </>

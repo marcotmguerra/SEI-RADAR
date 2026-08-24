@@ -1,17 +1,25 @@
 export interface ProcessoSei {
-  readonly numero: string;
-  readonly assunto: string | null;
-  readonly link: string;
-  readonly detectadoEm: string; // ISO 8601 string
-  readonly lido: boolean;
-  readonly unidade?: string;
+  numero: string;
+  assunto: string | null;
+  link: string;
+  detectadoEm: string; // ISO 8601 string
+  lido: boolean;
+  unidade?: string;
+  atribuidoPara?: string | null;
+  marcadores?: string[];
 }
 
+export type RegraNotificacao = 'todos' | 'atribuidos' | 'atribuidos_e_marcadores';
+
 export interface ConfiguracaoExtensao {
-  readonly urlControle: string;
-  readonly intervaloMinutos: number;
-  readonly somAtivo: boolean;
-  readonly notificacoesAtivas: boolean;
+  urlControle: string;
+  intervaloMinutos: number;
+  somAtivo: boolean;
+  notificacoesAtivas: boolean;
+  regraNotificacao: RegraNotificacao;
+  usuarioSigla: string;
+  marcadoresNotificacao: string[];
+  primeiraCargaRealizada: boolean;
 }
 
 export type StatusSessao = 'conectado' | 'desconectado' | 'verificando' | 'erro';
@@ -29,6 +37,10 @@ export const CONFIGURACAO_PADRAO: ConfiguracaoExtensao = {
   intervaloMinutos: 5,
   somAtivo: true,
   notificacoesAtivas: true,
+  regraNotificacao: 'todos',
+  usuarioSigla: '',
+  marcadoresNotificacao: [],
+  primeiraCargaRealizada: false,
 };
 
 export type MensagemRuntime =
@@ -43,5 +55,6 @@ export type MensagemRuntime =
       processos: ProcessoSei[];
       urlAtual?: string;
       autenticado?: boolean;
+      usuarioLogado?: string;
     }
   | { tipo: 'TESTAR_NOTIFICACAO' };
