@@ -2,320 +2,331 @@
 
 ## 1. Objetivo
 
-Criar uma aplicação que funcione como uma camada de gestão sobre o SEI!MG, sem substituir ou modificar o SEI.
+Criar uma aplicação em **React/PWA + Supabase** que funcione como uma camada de gestão sobre o SEI!MG, sem substituir o SEI e sem realizar alterações automáticas no sistema na primeira versão.
 
-O sistema deverá monitorar automaticamente:
+O CRM deverá acompanhar:
 
 - processos presentes na unidade;
 - processos atribuídos ao usuário;
-- processos presentes em determinados marcadores;
+- processos em marcadores selecionados;
 - entrada de novos processos;
-- atribuição de processos ao usuário;
+- novas atribuições ao usuário;
 - saída de processos da unidade;
-- alterações relevantes nos marcadores.
+- alterações de marcadores;
+- prazos, prioridade, observações e status internos do CRM.
 
-A primeira versão será **100% somente leitura no SEI**.
-
-O CRM terá funcionalidades próprias, como:
-
-- status de atendimento;
-- prioridade;
-- prazo;
-- observações;
-- histórico;
-- filtros;
-- dashboard;
-- kanban;
-- notificações.
+A integração com o SEI será feita por **Playwright executado localmente no computador do usuário**, sem VPS.
 
 ---
 
-# 2. Arquitetura recomendada
+## 2. Decisão de arquitetura
+
+Não será utilizada VPS na arquitetura inicial.
+
+O sistema será dividido em duas partes:
+
+1. **CRM Web/PWA** — React + Supabase.
+2. **Agente CRM-SEI local** — Node.js + Playwright + Chromium.
 
 ```text
-                    SEI!MG
-                       │
-                       │
-                 Playwright
-                       │
-                 Chromium Headless
-                       │
-                       ▼
-               Worker Node.js
-                    VPS
-                       │
-                       │
-                 Supabase API
-                       │
-          ┌────────────┼────────────┐
-          ▼            ▼            ▼
-      PostgreSQL    Realtime    Edge Functions
-          │                         │
-          │                         └── notificações
+Computador do usuário — Windows ou Linux
+│
+├── Agente CRM-SEI
+│   ├── Node.js
+│   ├── Playwright
+│   ├── Chromium
+│   ├── sessão SEI local
+│   ├── configuração de proxy
+│   └── agendador local
+│         │
+│         ▼
+│       SEI!MG
+│         │
+│         ▼
+└────── Supabase API
           │
-          ▼
-       CRM React
-        / PWA
+          ├── PostgreSQL
+          ├── Auth + RLS
+          ├── Realtime
+          ├── Edge Functions
+          └── notificações
+                │
+                ▼
+             CRM React/PWA
 ```
 
-### Responsabilidade de cada componente
+### Princípio principal
 
-**Playwright**
+A sessão do SEI e eventuais credenciais de proxy ficam **somente no computador do usuário**.
 
-Responsável exclusivamente por acessar e ler o SEI.
-
-**VPS / Worker Node.js**
-
-Executa o Playwright, controla a sessão e envia os resultados para o Supabase.
-
-**Supabase**
-
-Será a fonte principal de dados do CRM.
-
-Utilizaremos:
-
-- PostgreSQL;
-- Auth;
-- RLS;
-- Realtime;
-- Edge Functions;
-- Cron;
-- eventualmente Webhooks.
-
-**React/PWA**
-
-Interface utilizada pelo usuário.
+O Supabase recebe apenas os metadados necessários ao CRM.
 
 ---
 
-# 3. Por que não executar Playwright diretamente em uma Edge Function
+## 3. Agente CRM-SEI local
 
-O Playwright trabalha com um navegador real ou headless e precisa dos binários do Chromium e respectivas dependências do sistema operacional.
+O agente será um pequeno aplicativo/serviço instalado no computador utilizado pelo usuário.
 
-A própria instalação oficial do Playwright prevê:
+Responsabilidades:
+
+- abrir o Chromium controlado pelo Playwright;
+- reutilizar a sessão autenticada do SEI;
+- acessar a tela de Controle de Processos;
+- ler processos da unidade;
+- consultar “Ver atribuídos a mim”;
+- consultar marcadores configurados;
+- identificar mudanças;
+- acessar somente processos novos quando for necessário coletar assunto ou outros metadados;
+- enviar resultados ao Supabase;
+- registrar erros de sincronização;
+- encerrar o navegador ao finalizar a rotina.
+
+O usuário **não precisa deixar uma aba do navegador aberta**.
+
+```text
+PC ligado
+   ↓
+Agente inicia automaticamente
+   ↓
+Playwright abre Chromium headless
+   ↓
+consulta SEI
+   ↓
+sincroniza Supabase
+   ↓
+fecha Chromium
+```
+
+Se o computador estiver desligado, o monitoramento fica pausado e retorna quando o computador for ligado novamente.
+
+---
+
+## 4. Compatibilidade com Windows e Linux
+
+O agente deverá funcionar nos dois sistemas operacionais.
+
+### Windows
+
+Opções para inicialização automática:
+
+- Agendador de Tarefas do Windows;
+- serviço do Windows, se necessário posteriormente.
+
+### Linux
+
+Opções para inicialização automática:
+
+- `systemd` do usuário;
+- `systemd` do sistema;
+- serviço equivalente da distribuição.
+
+O código do agente deverá evitar caminhos e comandos específicos de um único sistema operacional.
+
+---
+
+## 5. Proxy da rede do CBMMG
+
+O suporte ao proxy é um requisito do projeto desde a primeira prova de conceito.
+
+O Playwright suporta proxy HTTP(S) e SOCKS, com possibilidade de usuário, senha e lista de endereços que devem ignorar o proxy.
+
+Exemplo conceitual:
+
+```js
+const browser = await chromium.launch({
+  headless: true,
+  proxy: {
+    server: process.env.PROXY_SERVER,
+    username: process.env.PROXY_USERNAME,
+    password: process.env.PROXY_PASSWORD
+  }
+});
+```
+
+As credenciais de proxy, quando necessárias, nunca deverão ser colocadas no código-fonte ou no GitHub.
+
+Configuração sugerida:
+
+```text
+PROXY_ENABLED=true
+PROXY_SERVER=http://proxy.exemplo:8080
+PROXY_USERNAME=
+PROXY_PASSWORD=
+PROXY_BYPASS=localhost,127.0.0.1
+```
+
+Também deverá ser testado o cenário em que o sistema operacional já possui o proxy configurado.
+
+### Primeiro teste dentro da rede do CBMMG
+
+Validar:
+
+- se o Chromium do Playwright acessa o SEI;
+- se o agente acessa o Supabase;
+- se o proxy exige autenticação;
+- se existe proxy automático/PAC;
+- se existe certificado raiz institucional;
+- se o Chromium do Playwright consegue ser instalado/atualizado nessa rede.
+
+Se houver inspeção HTTPS com certificado institucional, deverá ser utilizada a autoridade certificadora correta do ambiente. Não devemos desabilitar validações TLS apenas para contornar o proxy.
+
+---
+
+## 6. Instalação do Playwright
+
+### Windows
 
 ```bash
+npm install
 npx playwright install chromium
 ```
 
-e, em ambientes Linux:
+### Linux
 
 ```bash
+npm install
 npx playwright install --with-deps chromium
 ```
 
-As Edge Functions hospedadas do Supabase possuem limites de execução, memória e CPU e não são um servidor Linux convencional onde manteremos um navegador Chromium.
+Quando a instalação estiver atrás de proxy, o ambiente poderá precisar de `HTTPS_PROXY`.
 
-Portanto:
+Exemplo Linux:
 
-```text
-ERRADO
-
-Supabase Cron
-     ↓
-Edge Function
-     ↓
-Playwright
-     ↓
-SEI
+```bash
+HTTPS_PROXY=http://proxy.exemplo:8080 npx playwright install chromium
 ```
 
-A arquitetura será:
+Exemplo PowerShell:
 
-```text
-Supabase Cron
-     ↓
-Edge Function
-     ↓
-chama Worker privado
-     ↓
-Playwright
-     ↓
-SEI
+```powershell
+$Env:HTTPS_PROXY="http://proxy.exemplo:8080"
+npx playwright install chromium
 ```
-
-Ou, ainda mais simples:
-
-```text
-Cron da própria VPS
-     ↓
-Playwright
-     ↓
-SEI
-     ↓
-Supabase
-```
-
-Para a primeira versão, esta segunda opção é a que eu utilizaria.
-
-Tem menos componentes e consequentemente menos pontos de falha.
 
 ---
 
-# 4. Frequência de sincronização
+## 7. Autenticação no SEI
 
-Inicialmente:
+A primeira versão utilizará **login manual**.
 
 ```text
-A cada 10 minutos
+Agente
+  ↓
+abre navegador visível
+  ↓
+usuário autentica no SEI
+  ↓
+sessão autenticada
+  ↓
+salva storageState local
+```
+
+O Playwright poderá reutilizar cookies e dados de sessão por meio de `storageState`.
+
+Exemplo de arquivo:
+
+```text
+agent/playwright/.auth/sei.json
+```
+
+Esse arquivo é sensível e deverá ficar somente no computador do usuário.
+
+Adicionar ao `.gitignore`:
+
+```gitignore
+agent/playwright/.auth/
+.env
+*.local.json
+```
+
+---
+
+## 8. Expiração da sessão
+
+Se a sessão expirar, o agente deverá detectar que o SEI retornou para a tela de login.
+
+Status:
+
+```text
+AUTH_EXPIRED
+```
+
+O CRM poderá exibir:
+
+```text
+⚠️ Sessão do SEI expirada.
+Abra o agente e autentique novamente.
+```
+
+O sistema não tentará contornar MFA, CAPTCHA ou outros mecanismos de segurança.
+
+---
+
+## 9. Frequência de sincronização
+
+Começar com:
+
+```text
+10 minutos
 ```
 
 Depois de validar estabilidade:
 
 ```text
-A cada 5 minutos
+5 minutos
 ```
 
-Não existe necessidade de consultar o SEI a cada poucos segundos.
-
-Com intervalo de 5 minutos teremos no máximo:
+A rotina será controlada pelo próprio agente local.
 
 ```text
-12 verificações/hora
+Agente CRM-SEI
+     ↓
+executa sincronização
+     ↓
+espera 5 ou 10 min
+     ↓
+executa novamente
 ```
 
-O suficiente para um CRM administrativo sem gerar consultas desnecessárias ao SEI.
-
-Também podemos limitar para horário de expediente.
-
-Exemplo:
+Pode haver configuração de horário de funcionamento, por exemplo:
 
 ```text
-06:00 → 22:00
+06:00 às 22:00
 segunda a sexta
 ```
 
 ---
 
-# 5. Primeiro desafio: autenticação
+## 10. Primeira prova de conceito
 
-O Playwright deverá autenticar no SEI.
+Antes de construir o CRM completo, provar que o Playwright consegue ler corretamente a tela do SEI.
 
-Existem duas possibilidades.
-
-## Opção A — Login manual inicial
-
-É a opção que eu testaria primeiro.
-
-Abrimos o Chromium com Playwright:
+Objetivo inicial:
 
 ```text
-Playwright
-   ↓
-SEI
-   ↓
-usuário faz login
-   ↓
-sessão autenticada
-   ↓
-storageState
-```
-
-Depois disso o Playwright reutiliza a sessão.
-
-O Playwright suporta oficialmente salvar cookies, localStorage e outros dados de autenticação em um `storageState`. A documentação alerta que esse arquivo é sensível porque quem tiver acesso a ele poderá potencialmente utilizar a sessão autenticada.
-
-Portanto:
-
-```text
-playwright/.auth/sei.json
-```
-
-NUNCA deverá entrar no Git.
-
-Adicionar:
-
-```gitignore
-playwright/.auth/
-.env
-```
-
-O arquivo deverá existir somente no servidor.
-
----
-
-# 6. Expiração da sessão
-
-Se o SEI expirar a sessão, o robô NÃO tentará contornar controles de segurança.
-
-Ele deverá registrar:
-
-```text
-STATUS:
-AUTH_EXPIRED
-```
-
-e gerar uma notificação:
-
-```text
-⚠️ CRM SEI
-
-A sessão do SEI expirou.
-
-É necessário autenticar novamente.
-```
-
-Depois fazemos novo login manual e atualizamos o estado de autenticação.
-
-Se posteriormente descobrirmos que é seguro e autorizado automatizar o formulário de login, poderemos avaliar isso separadamente.
-
----
-
-# 7. Primeira automação
-
-Inicialmente o Playwright não fará absolutamente nenhuma alteração no SEI.
-
-Ele apenas irá para:
-
-```text
+Login manual
+↓
 Controle de Processos
+↓
+ler todos os números dos processos
+↓
+exibir resultado no terminal
 ```
 
-e identificará:
+Critério de sucesso:
 
 ```text
-Processos recebidos
-Processos gerados
+SEI informa: 180 registros
+Playwright captura: 180 registros
 ```
 
-A primeira prova de conceito deverá produzir algo parecido com:
-
-```json
-{
-  "unidade": "CBMMG/BEMAD",
-  "data": "2026-08-23T21:00:00",
-  "recebidos": [
-    "1400.01.0048464/2026-71",
-    "1400.01.0000704/2023-82"
-  ]
-}
-```
-
-Neste momento não precisamos nem do CRM.
-
-Primeiro precisamos provar:
-
-> O Playwright consegue entrar no SEI e listar corretamente todos os processos.
+Sem Supabase e sem notificações nesta fase.
 
 ---
 
-# 8. Paginação
+## 11. Paginação
 
-Esse ponto é muito importante.
-
-Na tela atual existem, por exemplo:
-
-```text
-Processos recebidos
-180 registros
-
-Página:
-1 → 50
-```
-
-Portanto não podemos ler somente a primeira tela.
-
-O robô deverá percorrer:
+O agente deverá percorrer todas as páginas da lista.
 
 ```text
 Página 1
@@ -327,17 +338,13 @@ Página 3
 Página 4
 ```
 
-e consolidar todos os processos.
-
-Somente depois disso consideramos a sincronização válida.
+A sincronização só será considerada válida se a quantidade coletada for compatível com a quantidade apresentada pelo SEI.
 
 ---
 
-# 9. Validação da coleta
+## 12. Validação da coleta
 
-Cada execução deverá gerar um relatório interno.
-
-Exemplo:
+Cada execução deverá registrar um resultado.
 
 ```json
 {
@@ -348,43 +355,53 @@ Exemplo:
 }
 ```
 
-Se o SEI indicar:
-
-```text
-180 registros
-```
-
-mas o Playwright encontrar apenas:
-
-```text
-150
-```
-
-a execução será marcada:
+Se o SEI informar 180 registros e apenas 150 forem coletados:
 
 ```text
 INCOMPLETE
 ```
 
-Nenhuma notificação de processo removido será gerada.
-
-Isso evita falsos alertas causados por:
-
-- erro de carregamento;
-- timeout;
-- mudança de HTML;
-- problema na paginação;
-- perda da sessão.
+Nesse caso, nenhuma conclusão sobre processos removidos deverá ser feita.
 
 ---
 
-# 10. Banco de dados
+## 13. Estratégia de coleta leve
 
-## Tabela `sei_processes`
+Não abrir todos os processos a cada sincronização.
+
+Fluxo:
+
+```text
+lista anterior: 180
+↓
+lista atual: 181
+↓
+identifica somente o novo processo
+↓
+abre esse processo
+↓
+coleta assunto/metadados necessários
+↓
+grava no Supabase
+```
+
+Isso reduz carga, tempo de execução e dependência da interface do SEI.
+
+---
+
+## 14. Dados que serão armazenados
+
+Na primeira versão, não copiar documentos, PDFs ou anexos.
+
+Guardar apenas metadados necessários ao CRM.
+
+Tabela `sei_processes`:
 
 ```text
 id
+user_id
 numero
+assunto
 sei_url
 unidade
 first_seen_at
@@ -399,21 +416,13 @@ created_at
 updated_at
 ```
 
-`numero` deverá ser UNIQUE.
-
-Exemplo:
-
-```text
-1400.01.0048464/2026-71
-```
+O número do processo deverá possuir restrição de unicidade adequada ao contexto do usuário/unidade.
 
 ---
 
-# 11. Marcadores
+## 15. Marcadores
 
-Teremos uma tabela específica.
-
-## `sei_markers`
+Tabela `sei_markers`:
 
 ```text
 id
@@ -423,9 +432,7 @@ sei_identifier
 created_at
 ```
 
-E relacionamento:
-
-## `sei_process_markers`
+Relacionamento `sei_process_markers`:
 
 ```text
 process_id
@@ -435,15 +442,11 @@ last_seen_at
 active
 ```
 
-Dessa forma um processo poderá ter vários marcadores.
-
 ---
 
-# 12. Eventos
+## 16. Eventos
 
-Esta será uma das tabelas mais importantes.
-
-## `sei_events`
+Tabela `sei_events`:
 
 ```text
 id
@@ -454,49 +457,27 @@ sync_id
 metadata
 ```
 
-Possíveis eventos:
+Eventos previstos:
 
 ```text
-ENTERED_UNIT
-
-LEFT_UNIT
-
-ASSIGNED_TO_ME
-
-UNASSIGNED_FROM_ME
-
-MARKER_ADDED
-
-MARKER_REMOVED
-
 FIRST_SEEN
-```
-
-Exemplo:
-
-```text
-Processo:
-1400.01.0048464/2026-71
-
-Evento:
+ENTERED_UNIT
+LEFT_UNIT
 ASSIGNED_TO_ME
-
-Detectado:
-24/08/2026 08:15
+UNASSIGNED_FROM_ME
+MARKER_ADDED
+MARKER_REMOVED
 ```
-
-Isso cria uma verdadeira linha do tempo.
 
 ---
 
-# 13. Histórico de sincronização
+## 17. Histórico de sincronização
 
-Tabela:
-
-## `sei_sync_runs`
+Tabela `sei_sync_runs`:
 
 ```text
 id
+user_id
 started_at
 finished_at
 status
@@ -508,71 +489,45 @@ error_message
 duration_ms
 ```
 
-Assim poderemos ter uma tela administrativa:
+Exemplo no CRM:
 
 ```text
-SINCRONIZAÇÕES
-
-21:00 ✅ 180 processos
-20:50 ✅ 180 processos
-20:40 ✅ 179 processos
-20:30 ⚠️ sessão expirada
+08:30 ✅ 180 processos
+08:20 ✅ 180 processos
+08:10 ⚠️ coleta incompleta
+08:00 ⚠️ sessão expirada
 ```
 
 ---
 
-# 14. Detectando processo novo
+## 18. Detectando novos processos
 
-Exemplo.
-
-Às 08:00:
+Exemplo:
 
 ```text
-A
-B
-C
+08:00 → A B C
+08:10 → A B C D
 ```
 
-Às 08:10:
+Evento:
 
 ```text
-A
-B
-C
-D
+D → ENTERED_UNIT
 ```
 
-O sistema encontra:
-
-```text
-D
-```
-
-Resultado:
-
-```text
-ENTERED_UNIT
-```
-
-Banco:
-
-```text
-process: D
-first_seen_at: 08:10
-```
-
-Notificação:
+Depois o agente pode abrir apenas `D`, coletar o assunto e gerar a notificação.
 
 ```text
 🔔 Novo processo na unidade
-
-SEI:
-1400.01.xxxxxxx/2026-xx
+Manutenção de viatura
+SEI 1400.01.xxxxxxx/2026-xx
 ```
+
+A exibição de assunto na notificação deverá ser configurável por questões de privacidade.
 
 ---
 
-# 15. Detectando processo atribuído a mim
+## 19. Detectando processos atribuídos ao usuário
 
 O Playwright acessará:
 
@@ -580,107 +535,32 @@ O Playwright acessará:
 Ver atribuídos a mim
 ```
 
-e criará um conjunto separado.
-
 Exemplo:
 
 ```text
-UNIDADE
-
-A
-B
-C
-D
-E
+antes: B D
+agora: B D E
 ```
+
+Evento:
 
 ```text
-ATRIBUÍDOS A MIM
-
-B
-D
+E → ASSIGNED_TO_ME
 ```
 
-Banco:
-
-```text
-B → assigned_to_me = true
-D → assigned_to_me = true
-```
-
-Se na próxima consulta aparecer:
-
-```text
-B
-D
-E
-```
-
-criamos:
-
-```text
-E
-ASSIGNED_TO_ME
-```
-
-e podemos notificar:
+Notificação:
 
 ```text
 👤 Novo processo atribuído a você
-
-1400.01.xxxxxxx/2026-xx
 ```
 
 ---
 
-# 16. Detectando marcadores
+## 20. Status do CRM separado do SEI
 
-Depois implementaremos:
-
-```text
-Ver por marcadores
-```
-
-O Playwright poderá capturar:
+O CRM terá seu próprio fluxo de trabalho.
 
 ```text
-URGENTE
-
-A
-B
-```
-
-```text
-MANUTENÇÃO
-
-C
-D
-```
-
-```text
-AGUARDANDO
-
-E
-F
-```
-
-O CRM passa a conhecer também os marcadores existentes dentro do próprio SEI.
-
----
-
-# 17. Separação entre status SEI e status CRM
-
-Isso é importante.
-
-O marcador do SEI continuará sendo informação do SEI.
-
-O CRM terá seu próprio fluxo.
-
-Exemplo:
-
-```text
-STATUS CRM
-
 Novo
 ↓
 Em análise
@@ -692,459 +572,189 @@ Para despacho
 Finalizado
 ```
 
-Isso permite usar um Kanban:
-
-```text
-NOVOS        EM ANÁLISE      AGUARDANDO      FINALIZADOS
-
-SEI 001      SEI 005         SEI 003         SEI 010
-SEI 002      SEI 006         SEI 004         SEI 011
-```
-
-Mover um card no Kanban inicialmente **não altera nada no SEI**.
+Mover um card no Kanban **não deverá alterar o SEI** na primeira versão.
 
 ---
 
-# 18. Tela inicial
+## 21. React/PWA
 
-Dashboard:
+Telas previstas:
 
-```text
-┌─────────────────────────────────────────────┐
-│ CRM SEI                                     │
-├──────────┬──────────┬──────────┬────────────┤
-│ Unidade  │ Meus     │ Novos    │ Prazos     │
-│   180    │   12     │    3     │    4       │
-├──────────┴──────────┴──────────┴────────────┤
-
-NOVOS
-
-🔴 1400.01.xxxxx/2026
-Entrou há 12 minutos
-
-🟡 1400.01.xxxxx/2026
-Entrou há 1 hora
-
-──────────────────────────────────────────────
-
-ATRIBUÍDOS A MIM
-
-1400.01.xxxxx/2026
-Em análise
-
-1400.01.xxxxx/2026
-Aguardando resposta
-```
-
----
-
-# 19. Página individual do processo
-
-Ao selecionar um processo:
-
-```text
-SEI 1400.01.xxxxxxx/2026-xx
-
-Status CRM
-Em análise
-
-Prioridade
-Alta
-
-Marcadores SEI
-🟡 Manutenção
-🔵 BEMAD
-
-Detectado na unidade
-23/08/2026 14:22
-
-Atribuído a mim
-23/08/2026 15:10
-
-Prazo CRM
-30/08/2026
-
-Observações
-...
-
-Histórico
-
-15:10  Atribuído a você
-14:22  Processo entrou na unidade
-```
-
-E:
-
-```text
-[ ABRIR NO SEI ]
-```
-
-O botão abre o processo original.
-
----
-
-# 20. Não duplicar documentos do SEI
-
-Na primeira versão NÃO iremos copiar:
-
-- PDFs;
-- ofícios;
-- despachos;
-- documentos;
-- anexos;
-- conteúdo interno;
-- assinaturas.
-
-Guardaremos apenas metadados mínimos necessários para o CRM.
-
-Isso deixa a aplicação:
-
-- mais simples;
-- mais segura;
-- mais rápida;
-- menos dependente do HTML interno dos processos.
-
----
-
-# 21. Google Sheets
-
-É perfeitamente possível usar uma Planilha Google.
-
-Por exemplo:
-
-```text
-Playwright
-     ↓
-Google Sheets API
-     ↓
-Planilha
-```
-
-Planilha:
-
-| Processo | Unidade | Atribuído | Marcador | Entrada |
-|---|---|---|---|---|
-| SEI 001 | BEMAD | Sim | Urgente | 08:10 |
-| SEI 002 | BEMAD | Não | Manutenção | 08:20 |
-
-Isso seria excelente para uma **prova de conceito de um ou dois dias**.
-
-Porém não utilizaria Google Sheets como banco definitivo.
-
-Quando adicionarmos:
-
-- eventos;
-- histórico;
-- usuários;
-- notificações;
-- RLS;
-- relacionamentos;
+- Login;
+- Dashboard;
+- Processos da unidade;
+- Atribuídos a mim;
+- Novos;
+- Marcadores;
 - Kanban;
-- dashboards;
-- filtros;
+- Prazos;
+- Histórico;
+- Status das sincronizações;
+- Configurações de notificações;
+- Configurações do agente.
+
+---
+
+## 22. Supabase
+
+O Supabase será o backend principal do CRM.
+
+Utilizar:
+
+- PostgreSQL;
+- Auth;
+- RLS;
 - Realtime;
+- Edge Functions;
+- Cron apenas para rotinas que não precisem acessar o SEI.
 
-o Supabase será muito mais apropriado.
+O Supabase Cron poderá cuidar de:
 
-### Minha escolha
+- lembretes de prazo;
+- resumo diário;
+- limpeza de registros antigos;
+- processamento de notificações;
+- rotinas baseadas em dados já existentes no banco.
 
-```text
-Supabase = banco oficial do CRM
-
-Google Sheets = exportação opcional
-```
-
-Poderíamos inclusive criar:
-
-```text
-Exportar para Google Sheets
-```
-
-posteriormente.
+A sincronização do SEI continuará sendo responsabilidade do agente local.
 
 ---
 
-# 22. Supabase Cron
-
-O Supabase oferece Cron baseado em `pg_cron` e consegue executar SQL, chamar funções do banco e fazer requisições HTTP, inclusive para Edge Functions.
-
-Podemos futuramente fazer:
-
-```text
-Supabase Cron
-cada 5 minutos
-       ↓
-Edge Function
-trigger-sei-sync
-       ↓
-POST
-       ↓
-VPS
-/api/sei/sync
-       ↓
-Playwright
-```
-
-Exemplo conceitual:
-
-```text
-*/5 * * * *
-```
-
-Mas para o MVP eu usaria:
-
-```text
-Cron da VPS
-     ↓
-node sei-sync.js
-```
-
-É mais simples.
-
----
-
-# 23. Edge Functions
-
-As Edge Functions continuam muito úteis.
-
-Elas poderão ser responsáveis por:
-
-```text
-notify-new-process
-
-notify-assignment
-
-create-push-notification
-
-generate-daily-summary
-
-export-sheet
-
-trigger-sei-sync
-```
-
-Ou seja:
-
-```text
-Playwright = coleta
-
-Postgres = dados
-
-Edge Functions = regras e integração
-
-React = interface
-```
-
----
-
-# 24. Realtime
-
-Depois que o Playwright inserir:
-
-```text
-ENTERED_UNIT
-```
-
-no Supabase, o Realtime poderá atualizar imediatamente o CRM aberto.
+## 23. Realtime
 
 Fluxo:
 
 ```text
-Playwright
+Agente local
    ↓
-INSERT
-   ↓
-Supabase
+Supabase INSERT/UPDATE
    ↓
 Realtime
    ↓
-CRM
+CRM React aberto atualiza automaticamente
 ```
-
-Sem precisar atualizar a página.
 
 ---
 
-# 25. Notificações
+## 24. Notificações
 
-Quando surgir:
-
-```text
-ENTERED_UNIT
-```
-
-podemos gerar:
+Eventos possíveis:
 
 ```text
-🔔 Novo SEI recebido
-```
-
-Quando surgir:
-
-```text
-ASSIGNED_TO_ME
-```
-
-podemos gerar:
-
-```text
+🔔 Novo processo na unidade
 👤 Processo atribuído a você
-```
-
-E posteriormente:
-
-```text
 ⏰ Prazo próximo
+⚠️ Processo parado há muitos dias
+⚠️ Sessão SEI expirada
+⚠️ Agente sem sincronizar
+```
 
-⚠️ Processo parado há 10 dias
+Preferências do usuário:
+
+```text
+Conteúdo da notificação
+○ apenas aviso
+○ número do SEI
+○ número + assunto
 ```
 
 ---
 
-# 26. Regra contra falso "processo saiu"
+## 25. Regra contra falsos eventos de saída
 
-Não devemos considerar um processo removido simplesmente porque ele não apareceu uma vez.
+Um processo não será marcado como removido após uma única ausência.
+
+```text
+1ª ausência → missing_count = 1
+2ª ausência consecutiva → confirmar LEFT_UNIT
+```
+
+Se uma sincronização estiver incompleta, ela não contará para essa regra.
+
+---
+
+## 26. Segurança
+
+### No frontend
+
+Nunca utilizar `SERVICE_ROLE_KEY`.
+
+Usar chave pública adequada + RLS.
+
+### No agente
+
+Nunca versionar:
+
+- sessão do SEI;
+- credenciais do proxy;
+- chaves privadas;
+- tokens de backend.
+
+### No Supabase
+
+Aplicar RLS para que cada usuário veja somente os dados autorizados.
+
+### Dados do SEI
+
+Na primeira versão, armazenar somente metadados necessários ao CRM.
+
+Não copiar automaticamente:
+
+- PDFs;
+- ofícios;
+- despachos;
+- anexos;
+- conteúdo integral de documentos;
+- assinaturas.
+
+---
+
+## 27. Detecção de mudança de layout
+
+Se o agente não encontrar elementos essenciais, deverá interromper a sincronização.
 
 Exemplo:
-
-```text
-08:00 → processo existe
-08:10 → não apareceu
-08:20 → processo existe
-```
-
-Isso pode ter sido erro de carregamento.
-
-Portanto o algoritmo pode exigir duas verificações consecutivas.
-
-```text
-missing_count = 1
-```
-
-não faz nada.
-
-```text
-missing_count = 2
-```
-
-então:
-
-```text
-LEFT_UNIT
-```
-
-Isso aumenta bastante a confiabilidade.
-
----
-
-# 27. Segurança do Supabase
-
-O frontend nunca receberá:
-
-```text
-SERVICE_ROLE_KEY
-```
-
-Somente:
-
-```text
-anon/publishable key
-```
-
-com RLS.
-
-O Worker Playwright poderá utilizar uma credencial de backend separada.
-
-Também devemos criar políticas para que cada usuário veja apenas aquilo que sua função permitir.
-
----
-
-# 28. Segurança da sessão SEI
-
-A sessão do Playwright deve ser tratada praticamente como uma senha.
-
-O próprio Playwright alerta que arquivos de estado autenticado podem conter cookies e informações capazes de representar aquele usuário.
-
-Portanto:
-
-```text
-NUNCA:
-GitHub
-
-NUNCA:
-frontend
-
-NUNCA:
-localStorage do CRM
-
-NUNCA:
-tabela pública do Supabase
-```
-
-Ela ficará somente no servidor do Worker, com acesso restrito.
-
----
-
-# 29. Monitoramento de mudança no SEI
-
-Como estamos automatizando uma interface HTML, eventualmente o SEI pode mudar.
-
-Precisamos detectar isso.
-
-Exemplo:
-
-```text
-não encontrou:
-Controle de Processos
-
-não encontrou:
-Ver atribuídos a mim
-```
-
-Resultado:
 
 ```text
 SCRAPER_LAYOUT_ERROR
 ```
 
-O sistema para aquela sincronização e alerta:
+Não gravar dados parciais como se fossem válidos.
+
+O CRM deverá exibir:
 
 ```text
-⚠️ CRM SEI
-
-A estrutura da página do SEI mudou.
-
+⚠️ A estrutura da página do SEI mudou.
 Sincronização interrompida.
 ```
 
-Melhor parar do que gravar dados incorretos.
-
 ---
 
-# 30. Estrutura do projeto
+## 28. Estrutura sugerida do repositório
 
 ```text
-sei-crm/
+crm-sei/
 │
 ├── apps/
 │   └── web/
-│       └── React
+│       └── React/PWA
 │
-├── worker/
+├── agent/
 │   ├── src/
 │   │   ├── browser/
 │   │   │   ├── login.ts
 │   │   │   ├── control-processes.ts
 │   │   │   ├── assignments.ts
 │   │   │   └── markers.ts
-│   │   │
 │   │   ├── sync/
 │   │   │   ├── processes.ts
 │   │   │   ├── compare.ts
 │   │   │   └── events.ts
-│   │   │
-│   │   └── index.ts
-│   │
+│   │   ├── platform/
+│   │   │   ├── windows.ts
+│   │   │   └── linux.ts
+│   │   └── config/
+│   │       └── proxy.ts
 │   └── playwright/
 │       └── .auth/
 │
@@ -1157,32 +767,21 @@ sei-crm/
 
 ---
 
-# 31. Fases de implementação
+## 29. Fases de implementação
 
-## Fase 1 — Playwright local
+### Fase 1 — Playwright local
 
-Objetivo:
+- instalar Playwright;
+- testar dentro e fora da rede do CBMMG;
+- validar proxy;
+- login manual;
+- acessar Controle de Processos;
+- listar todos os números;
+- validar paginação.
 
-```text
-Login
-↓
-Controle de Processos
-↓
-listar números
-```
+**Critério:** quantidade capturada = quantidade mostrada pelo SEI.
 
-Sem banco.
-
-Critério de sucesso:
-
-```text
-SEI mostra: 180
-Playwright captura: 180
-```
-
----
-
-## Fase 2 — Supabase
+### Fase 2 — Supabase
 
 Criar:
 
@@ -1191,19 +790,11 @@ sei_processes
 sei_sync_runs
 ```
 
-O Playwright passa a fazer UPSERT dos processos.
+Fazer UPSERT dos processos coletados.
 
----
+### Fase 3 — Eventos
 
-## Fase 3 — Detecção de eventos
-
-Criar:
-
-```text
-sei_events
-```
-
-Detectar:
+Criar `sei_events` e detectar:
 
 ```text
 FIRST_SEEN
@@ -1211,170 +802,105 @@ ENTERED_UNIT
 LEFT_UNIT
 ```
 
----
+### Fase 4 — Atribuições
 
-## Fase 4 — Atribuições
-
-Automatizar:
-
-```text
-Ver atribuídos a mim
-```
-
-Detectar:
+Automatizar “Ver atribuídos a mim” e detectar:
 
 ```text
 ASSIGNED_TO_ME
 UNASSIGNED_FROM_ME
 ```
 
----
+### Fase 5 — Assunto e metadados
 
-## Fase 5 — Marcadores
+Abrir somente processos novos/alterados e coletar os campos necessários.
 
-Automatizar:
+### Fase 6 — Marcadores
 
-```text
-Ver por marcadores
-```
+Automatizar leitura dos marcadores selecionados.
 
-Criar relacionamento entre processos e marcadores.
+### Fase 7 — CRM React/PWA
 
----
+Criar dashboard, lista, filtros, Kanban, prazos e histórico.
 
-## Fase 6 — CRM
+### Fase 8 — Notificações
 
-Criar React/PWA:
+Implementar novos processos, atribuições, prazo e falha de sincronização.
 
-```text
-Dashboard
-Processos
-Meus processos
-Novos
-Marcadores
-Kanban
-Prazos
-Histórico
-```
+### Fase 9 — Empacotamento Windows/Linux
+
+Preparar instalação simples do agente e inicialização automática nos dois sistemas.
 
 ---
 
-## Fase 7 — Notificações
-
-Adicionar:
-
-```text
-Novo processo
-
-Atribuído a mim
-
-Prazo próximo
-
-Processo sem movimentação
-```
-
----
-
-## Fase 8 — Produção
-
-Mover Worker para VPS.
-
-Instalar:
-
-```text
-Node.js
-Playwright
-Chromium
-```
-
-Executar com:
-
-```text
-systemd
-```
-
-ou:
-
-```text
-PM2
-```
-
-Adicionar Cron.
-
----
-
-# 32. Critérios para considerar o MVP pronto
+## 30. Critérios do MVP
 
 O MVP estará pronto quando conseguir:
 
-- autenticar no SEI;
-- reutilizar sessão autenticada;
+- funcionar em Windows e Linux;
+- funcionar na rede do CBMMG com a configuração de proxy necessária;
+- autenticar manualmente no SEI;
+- reutilizar a sessão local;
 - acessar Controle de Processos;
 - percorrer todas as páginas;
-- capturar todos os processos recebidos;
-- identificar processos atribuídos ao usuário;
-- identificar marcadores selecionados;
-- gravar dados no Supabase;
+- capturar todos os processos;
+- identificar atribuídos ao usuário;
+- gravar no Supabase;
 - detectar processo novo;
+- coletar assunto do processo novo quando disponível;
 - detectar nova atribuição;
-- criar histórico;
-- atualizar o dashboard;
-- gerar uma notificação;
+- gerar histórico;
+- atualizar o React via Realtime;
+- gerar notificação;
 - abrir o processo original no SEI;
-- falhar com segurança caso a sessão expire;
-- não realizar nenhuma alteração no SEI.
+- detectar sessão expirada;
+- detectar erro de layout;
+- nunca alterar automaticamente o SEI.
 
 ---
 
-# 33. Arquitetura final recomendada
+## 31. Arquitetura final do MVP
 
 ```text
-┌─────────────────┐
-│     SEI!MG      │
-└────────┬────────┘
-         │
-         │ somente leitura
-         ▼
-┌─────────────────┐
-│   Playwright    │
-│    Chromium     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Node Worker VPS │
-│ sync 5-10 min   │
-└────────┬────────┘
-         │
-         ▼
+┌─────────────────────────────────┐
+│ PC DO USUÁRIO                   │
+│ Windows ou Linux                │
+│                                 │
+│ Agente Node.js                  │
+│      ↓                          │
+│ Playwright + Chromium           │
+│      ↓                          │
+│ SEI!MG                          │
+│                                 │
+│ sessão + proxy ficam locais     │
+└──────────────┬──────────────────┘
+               │ metadados
+               ▼
 ┌───────────────────────────────────────┐
 │               Supabase                │
 │                                       │
 │ PostgreSQL │ Auth │ RLS │ Realtime    │
-│ Cron       │ Edge Functions           │
+│ Edge Functions │ notificações         │
 └───────────────┬───────────────────────┘
                 │
                 ▼
        ┌─────────────────┐
-       │     CRM PWA     │
-       │ React           │
+       │   CRM React/PWA │
        └─────────────────┘
 ```
 
-# Decisão técnica
+## Decisão técnica
 
-Para este projeto:
+Para o MVP:
 
-**Playwright + Worker Node.js em VPS** para conversar com o SEI.
+- **React/PWA** para interface;
+- **Supabase** para banco, autenticação, RLS, Realtime e funções server-side;
+- **Node.js + Playwright local** como conector com o SEI;
+- **Chromium headless** para automação sem aba aberta;
+- **Agendador local** para sincronização periódica;
+- **Windows + Linux** como plataformas suportadas;
+- **proxy institucional** tratado como requisito de implantação;
+- **sem VPS**;
+- **Google Sheets apenas como exportação opcional**, não como banco principal.
 
-**Supabase PostgreSQL** como banco do CRM.
-
-**Supabase Realtime** para atualizar a aplicação.
-
-**Supabase Edge Functions** para notificações, integrações e regras server-side.
-
-**Supabase Cron ou Cron da VPS** para agendamento.
-
-**Google Sheets** apenas como exportação ou prova de conceito.
-
-Essa arquitetura mantém o SEI como sistema oficial e transforma o CRM em uma camada de acompanhamento, priorização e gestão do trabalho, sem inicialmente escrever ou alterar nenhum dado dentro do SEI.
+O SEI continuará sendo o sistema oficial. O CRM será uma camada de organização, acompanhamento e notificações, inicialmente somente leitura.
