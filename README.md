@@ -65,3 +65,4 @@ npm run dev
 - Não envia dados para servidores externos ou serviços em nuvem.
 - Os processos coletados e as preferências de configuração ficam armazenados exclusivamente na memória local do seu próprio navegador (`chrome.storage.local`).
 - A seleção pessoal de escopo e etiquetas não afeta as marcações nem a visualização de outros usuários da unidade.
+- Consulte a [Política de Privacidade completa](./privacy-policy.html) para detalhes sobre dados coletados, permissões utilizadas e seus direitos.

@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Política de Privacidade — SEI! Radar</title>
+  <meta name="description" content="Política de Privacidade da extensão de navegador SEI! Radar." />
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #1e293b;
+      --text-muted: #475569;
+      --border: #e2e8f0;
+      --accent: #2563eb;
+      --accent-soft: #eff6ff;
+      --ok: #059669;
+      --ok-soft: #ecfdf5;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --text-muted: #94a3b8;
+        --border: #334155;
+        --accent: #60a5fa;
+        --accent-soft: #1e3a5f;
+        --ok: #34d399;
+        --ok-soft: #0f2e22;
+      }
+    }
+
+    :root[data-theme="dark"] {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a5f;
+      --ok: #34d399;
+      --ok-soft: #0f2e22;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.65;
+    }
+
+    .wrap {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
+
+    header.hero {
+      margin-bottom: 2.5rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.3rem 0.7rem;
+      border-radius: 999px;
+      margin-bottom: 1rem;
+    }
+
+    h1 {
+      font-size: 1.9rem;
+      margin: 0 0 0.4rem;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin: 0;
+    }
+
+    .meta {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 0.75rem;
+    }
+
+    .summary-card {
+      background: var(--ok-soft);
+      border: 1px solid var(--ok);
+      border-radius: 12px;
+      padding: 1.1rem 1.3rem;
+      margin: 1.75rem 0 2.5rem;
+      font-size: 0.95rem;
+    }
+
+    .summary-card strong {
+      color: var(--ok);
+    }
+
+    section {
+      margin-bottom: 2.2rem;
+    }
+
+    h2 {
+      font-size: 1.2rem;
+      margin: 0 0 0.8rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    h3 {
+      font-size: 1rem;
+      margin: 1.2rem 0 0.5rem;
+      color: var(--text);
+    }
+
+    p {
+      margin: 0 0 0.9rem;
+      color: var(--text-muted);
+    }
+
+    ul, ol {
+      margin: 0 0 0.9rem;
+      padding-left: 1.3rem;
+      color: var(--text-muted);
+    }
+
+    li {
+      margin-bottom: 0.4rem;
+    }
+
+    li strong {
+      color: var(--text);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.5rem 0 1.2rem;
+      font-size: 0.9rem;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      margin-bottom: 1.2rem;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .table-scroll table {
+      margin: 0;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.65rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    td {
+      color: var(--text-muted);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.85em;
+      color: var(--text);
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .toc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem 1.4rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .toc p {
+      margin: 0 0 0.6rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 1.2rem;
+      columns: 1;
+    }
+
+    .toc a {
+      color: var(--text-muted);
+    }
+
+    .toc a:hover {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <span class="badge">🔒 Política de Privacidade</span>
+      <h1>SEI! Radar — Extensão de Navegador</h1>
+      <p class="subtitle">Notificações automáticas de novos processos no SEI, com extração de assunto e link de acesso rápido.</p>
+      <p class="meta">Última atualização: 25 de agosto de 2026</p>
+    </header>
+
+    <div class="summary-card">
+      <strong>Resumo direto:</strong> o SEI! Radar não possui servidores próprios, não envia nenhum dado para a internet
+      e não compartilha nem vende informações a terceiros. Tudo o que a extensão lê fica salvo exclusivamente dentro
+      do seu próprio navegador (<code>chrome.storage.local</code>), usando a sua sessão já autenticada no SEI.
+    </div>
+
+    <nav class="toc">
+      <p>Nesta página</p>
+      <ol>
+        <li><a href="#quem-somos">1. Sobre esta extensão</a></li>
+        <li><a href="#dados-coletados">2. Quais dados são coletados</a></li>
+        <li><a href="#como-coletamos">3. Como os dados são coletados</a></li>
+        <li><a href="#permissoes">4. Permissões do navegador utilizadas</a></li>
+        <li><a href="#armazenamento">5. Onde e por quanto tempo os dados ficam armazenados</a></li>
+        <li><a href="#compartilhamento">6. Compartilhamento de dados com terceiros</a></li>
+        <li><a href="#cookies">7. Uso de cookies e sessão</a></li>
+        <li><a href="#notificacoes">8. Notificações e áudio</a></li>
+        <li><a href="#controle">9. Seu controle sobre os dados</a></li>
+        <li><a href="#seguranca">10. Segurança</a></li>
+        <li><a href="#lgpd">11. Seus direitos (LGPD)</a></li>
+        <li><a href="#criancas">12. Uso por menores de idade</a></li>
+        <li><a href="#alteracoes">13. Alterações nesta política</a></li>
+        <li><a href="#contato">14. Contato</a></li>
+      </ol>
+    </nav>
+
+    <section id="quem-somos">
+      <h2>1. Sobre esta extensão</h2>
+      <p>
+        <strong>SEI! Radar</strong> é uma extensão de navegador (Chrome, Edge e Brave — Manifest V3) que monitora,
+        dentro da própria sessão autenticada do usuário, a chegada e a tramitação de processos no Sistema Eletrônico
+        de Informações (SEI), exibindo notificações nativas do sistema operacional e um painel ("Radar Pessoal") com
+        número, assunto, unidade de atribuição e marcadores/etiquetas dos processos.
+      </p>
+      <p>
+        Esta política descreve, de forma transparente, quais dados a extensão acessa, como e onde eles são
+        processados e armazenados, e quais escolhas você tem sobre eles.
+      </p>
+    </section>
+
+    <section id="dados-coletados">
+      <h2>2. Quais dados são coletados</h2>
+      <p>
+        A extensão só interage com páginas do SEI (a instituição definida no seu escopo de instalação, ex.:
+        <code>sei.mg.gov.br</code>) e com nenhum outro site. Os dados lidos são:
+      </p>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Dado</th>
+              <th>Origem</th>
+              <th>Finalidade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Número, assunto, link e status do processo</strong></td>
+              <td>Extraído da tabela de processos exibida na sua própria tela do SEI</td>
+              <td>Montar a lista de processos do Radar e identificar novidades</td>
+            </tr>
+            <tr>
+              <td><strong>Unidade/pessoa a quem o processo está atribuído</strong></td>
+              <td>Extraído da mesma tabela do SEI</td>
+              <td>Filtrar e notificar apenas os processos relevantes para você</td>
+            </tr>
+            <tr>
+              <td><strong>Marcadores/etiquetas e observações do processo</strong></td>
+              <td>Lidos dos ícones e tooltips já exibidos na página do SEI</td>
+              <td>Alertar quando um marcador acompanhado for adicionado ou alterado</td>
+            </tr>
+            <tr>
+              <td><strong>Sigla ou nome do usuário logado</strong></td>
+              <td>Lido do cabeçalho da página do SEI, apenas para pré-preencher a configuração</td>
+              <td>Sugerir automaticamente o filtro "processos atribuídos a mim"</td>
+            </tr>
+            <tr>
+              <td><strong>Preferências de configuração</strong> (intervalo de verificação, regras de notificação,
+                escopo do radar, som ativo/inativo, URL de controle do SEI da sua instituição)</td>
+              <td>Definidas por você no popup/painel da extensão</td>
+              <td>Personalizar o funcionamento do Radar</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        <strong>A extensão não coleta</strong> senhas, dados de formulários, conteúdo de documentos/autos
+        processuais, histórico de navegação fora do SEI, dados de pagamento, localização, nem qualquer identificador
+        publicitário. Ela também não realiza rastreamento (<em>tracking</em>) nem análise de comportamento de uso.
+      </p>
+    </section>
+
+    <section id="como-coletamos">
+      <h2>3. Como os dados são coletados</h2>
+      <p>A coleta acontece de duas formas, sempre restrita a páginas do SEI:</p>
+      <ol>
+        <li>
+          <strong>Script de conteúdo (content script):</strong> quando você tem uma aba do SEI aberta, um script lê
+          diretamente o HTML já carregado na tela (a mesma tabela de processos que você vê) para extrair número,
+          assunto, atribuição e marcadores.
+        </li>
+        <li>
+          <strong>Verificação periódica em segundo plano:</strong> em intervalos configuráveis (1 a 15 minutos), a
+          extensão faz uma requisição à página de controle do SEI utilizando a sua sessão já autenticada no
+          navegador (<em>cookies</em> de sessão existentes), para verificar se há processos novos — sem realizar
+          login automático nem armazenar usuário/senha.
+        </li>
+      </ol>
+      <p>
+        Em ambos os casos, a extração acontece localmente, dentro do seu navegador. Nenhum HTML, cookie ou conteúdo
+        de página é transmitido a servidores externos — a extensão não possui backend, API própria ou serviço em
+        nuvem.
+      </p>
+    </section>
+
+    <section id="permissoes">
+      <h2>4. Permissões do navegador utilizadas</h2>
+      <p>O manifesto da extensão solicita as permissões abaixo, cada uma usada estritamente para o fim descrito:</p>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Permissão</th>
+              <th>Uso</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>storage</code></td>
+              <td>Guardar processos e preferências localmente (<code>chrome.storage.local</code>)</td>
+            </tr>
+            <tr>
+              <td><code>alarms</code></td>
+              <td>Agendar a verificação periódica de novos processos</td>
+            </tr>
+            <tr>
+              <td><code>notifications</code></td>
+              <td>Exibir os alertas nativos do sistema operacional sobre novos processos/marcadores</td>
+            </tr>
+            <tr>
+              <td><code>tabs</code></td>
+              <td>Identificar abas do SEI já abertas e abrir/focar o processo ao clicar em uma notificação</td>
+            </tr>
+            <tr>
+              <td><code>cookies</code></td>
+              <td>Reaproveitar a sessão autenticada existente do SEI ao fazer a verificação em segundo plano
+                (a extensão não lê nem grava cookies de outros sites)</td>
+            </tr>
+            <tr>
+              <td><code>offscreen</code></td>
+              <td>Reproduzir o alerta sonoro (áudio) de forma discreta, já que o service worker não acessa a
+                interface diretamente</td>
+            </tr>
+            <tr>
+              <td><code>sidePanel</code></td>
+              <td>Exibir o Radar no painel lateral do navegador, se você optar por essa visualização</td>
+            </tr>
+            <tr>
+              <td><code>host_permissions (*://*/*)</code></td>
+              <td>Necessária tecnicamente para o content script funcionar em qualquer domínio/subdomínio de SEI
+                utilizado por diferentes instituições; na prática, o script só atua em páginas cuja URL contenha
+                padrões do SEI (ex.: <code>controlador.php</code>, <code>acao=procedimento_*</code>)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="armazenamento">
+      <h2>5. Onde e por quanto tempo os dados ficam armazenados</h2>
+      <p>
+        Todos os dados coletados — processos, marcadores e preferências — são armazenados exclusivamente no
+        armazenamento local do seu próprio navegador (<code>chrome.storage.local</code>), no seu computador. Eles:
+      </p>
+      <ul>
+        <li>Não são enviados para nenhum servidor, banco de dados externo ou serviço de nuvem;</li>
+        <li>Não ficam sincronizados entre dispositivos ou navegadores;</li>
+        <li>Permanecem salvos até que você os apague manualmente na extensão ou remova a extensão do navegador,
+          momento em que o Chrome/Edge/Brave descarta automaticamente todo o armazenamento local associado a ela.</li>
+      </ul>
+    </section>
+
+    <section id="compartilhamento">
+      <h2>6. Compartilhamento de dados com terceiros</h2>
+      <p>
+        O SEI! Radar <strong>não compartilha, vende, aluga ou transmite</strong> qualquer dado coletado a terceiros,
+        anunciantes, serviços de analytics ou quaisquer outros serviços externos. Não há integração com APIs de
+        terceiros, SDKs de publicidade ou ferramentas de rastreamento embutidas na extensão.
+      </p>
+    </section>
+
+    <section id="cookies">
+      <h2>7. Uso de cookies e sessão</h2>
+      <p>
+        A extensão não cria cookies próprios nem cookies de rastreamento. Ela apenas reutiliza os cookies de sessão
+        que o próprio SEI já define quando você faz login normalmente no sistema, para poder consultar a página de
+        controle em segundo plano com <code>credentials: include</code>. Isso funciona como se você mesmo tivesse
+        atualizado a página do SEI — nenhuma credencial é lida, copiada ou armazenada pela extensão.
+      </p>
+    </section>
+
+    <section id="notificacoes">
+      <h2>8. Notificações e áudio</h2>
+      <p>
+        As notificações exibidas (novo processo, marcador atualizado, sessão expirada) usam apenas dados já extraídos
+        localmente (número, assunto, marcadores) e são geradas e exibidas inteiramente pelo seu navegador através da
+        API nativa <code>chrome.notifications</code>. O alerta sonoro é reproduzido localmente via um documento
+        auxiliar (offscreen) usando Web Audio API, sem envio de dados a serviços externos.
+      </p>
+    </section>
+
+    <section id="controle">
+      <h2>9. Seu controle sobre os dados</h2>
+      <p>Você pode, a qualquer momento, diretamente pelo popup/painel da extensão:</p>
+      <ul>
+        <li>Limpar todos os processos monitorados armazenados localmente;</li>
+        <li>Alterar ou apagar a sigla de usuário, escopo do radar e marcadores configurados;</li>
+        <li>Desativar notificações e/ou o alerta sonoro;</li>
+        <li>Ajustar ou desativar a verificação periódica alterando o intervalo;</li>
+        <li>Remover a extensão do navegador a qualquer momento, o que apaga permanentemente todos os dados
+          armazenados localmente por ela (via <code>chrome://extensions</code> ou equivalente).</li>
+      </ul>
+    </section>
+
+    <section id="seguranca">
+      <h2>10. Segurança</h2>
+      <p>
+        Por operar em modo somente leitura e armazenar dados apenas localmente — sem backend, sem transmissão pela
+        internet e sem contas de usuário próprias — a extensão reduz significativamente a superfície de risco: não
+        há servidor para ser invadido nem base de dados centralizada que possa vazar informações de múltiplos
+        usuários. Ainda assim, recomenda-se manter seu navegador atualizado e usar a extensão apenas em dispositivos
+        de confiança.
+      </p>
+    </section>
+
+    <section id="lgpd">
+      <h2>11. Seus direitos (LGPD)</h2>
+      <p>
+        Nos termos da Lei Geral de Proteção de Dados (Lei nº 13.709/2018), você tem direito a confirmar a existência
+        de tratamento, acessar, corrigir e eliminar seus dados. Como todo o processamento realizado pelo SEI! Radar
+        ocorre localmente e sob seu controle direto, esses direitos já ficam disponíveis nativamente: você acessa,
+        edita e apaga os dados a qualquer momento pela própria interface da extensão ou removendo-a do navegador,
+        sem necessidade de solicitação a terceiros.
+      </p>
+      <p>
+        Os dados dos processos exibidos são de titularidade e responsabilidade do próprio SEI/órgão público
+        correspondente; esta extensão apenas os exibe localmente a partir de uma sessão já autorizada pelo próprio
+        usuário.
+      </p>
+    </section>
+
+    <section id="criancas">
+      <h2>12. Uso por menores de idade</h2>
+      <p>
+        Esta extensão é destinada a servidores públicos e usuários autorizados de sistemas SEI no exercício de
+        atividades profissionais/administrativas, não sendo direcionada a crianças ou adolescentes.
+      </p>
+    </section>
+
+    <section id="alteracoes">
+      <h2>13. Alterações nesta política</h2>
+      <p>
+        Esta Política de Privacidade pode ser atualizada sempre que houver mudanças relevantes na extensão. A data
+        da última atualização é exibida no topo desta página. Recomenda-se revisá-la periodicamente.
+      </p>
+    </section>
+
+    <section id="contato">
+      <h2>14. Contato</h2>
+      <p>
+        Dúvidas, solicitações ou relatos relacionados a esta Política de Privacidade podem ser enviados por meio das
+        <a href="https://github.com/marcotmguerra/crm-sei/issues" target="_blank" rel="noopener noreferrer">Issues do
+        repositório oficial no GitHub</a>.
+      </p>
+    </section>
+
+    <footer>
+      <p>SEI! Radar — Extensão de navegador para monitoramento pessoal de processos no SEI.</p>
+    </footer>
+  </div>
+</body>
+</html>
