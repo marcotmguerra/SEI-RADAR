@@ -1,17 +1,17 @@
-# 📖 Guia de Instalação e Uso do SEI Notifier
+# Guia de Instalação e Uso do SEI RADAR
 
-Este guia foi elaborado para você e seus colegas de equipe instalarem e utilizarem o **SEI Notifier** no dia a dia com facilidade.
+Este guia foi elaborado para você e seus colegas de equipe instalarem e utilizarem o **SEI RADAR** (Radar SEI) no dia a dia com facilidade.
 
 ---
 
-## 📋 Requisitos
+## Requisitos
 
 - Qualquer computador com **Google Chrome**, **Microsoft Edge** ou **Brave Browser**.
 - Acesso à internet e login regular no SEI (ex: SEI!MG ou SEI do seu órgão).
 
 ---
 
-## 🚀 Passo a Passo de Instalação
+## Passo a Passo de Instalação
 
 ### Opção A: Para quem recebeu a pasta `dist` já gerada (Colegas sem Node.js)
 
@@ -39,25 +39,25 @@ Se você compactou e enviou a pasta `dist` para um colega:
 
 ---
 
-## 📌 Fixando o Ícone na Barra do Navegador
+## Fixando o Ícone na Barra do Navegador
 
 Para acompanhar os alertas facilmente:
-1. Clique no ícone de quebra-cabeça 🧩 (Extensões) ao lado da barra de endereços do Chrome/Edge.
-2. Localize **SEI Notifier** e clique no ícone de **Alfinete 📌** (Fixar).
-3. O ícone azul do SEI ficará sempre visível no navegador com um contador numérico quando houver novos processos não lidos.
+1. Clique no ícone de Extensões (peça de encaixe) ao lado da barra de endereços do Chrome/Edge.
+2. Localize **SEI Radar** e clique no botão de **Fixar** (ícone de alfinete).
+3. O ícone do SEI ficará sempre visível no navegador com um contador numérico quando houver novos processos não lidos.
 
 ---
 
-## 💡 Como Usar
+## Como Usar
 
 ### 1. Conectar e Sincronizar
 - Faça login normal no SEI no seu navegador.
-- Clique no ícone do **SEI Notifier** na barra de ferramentas.
+- Clique no ícone do **SEI Radar** na barra de ferramentas.
 - Clique no botão **"Abrir SEI"** se ainda não estiver na página de controle.
 - A extensão fará a checagem automática em segundo plano a cada 5 minutos (configurável).
 
 ### 2. Receber Alertas
-- Quando um novo processo chegar na sua unidade, uma notificação aparecerá no canto da tela com o **Número do processo** e o **Assunto**.
+- Quando um novo processo chegar na sua unidade (ou no seu Radar), uma notificação aparecerá no canto da tela com o **Número do processo** e o **Assunto**.
 - Clicar na notificação abrirá o processo diretamente em uma nova aba do SEI.
 
 ### 3. Visualizar e Buscar
@@ -65,7 +65,8 @@ Para acompanhar os alertas facilmente:
 - Clique em **"Novo"** ou **"Marcar lido"** para gerenciar os processos que você já visualizou.
 
 ### 4. Configurar
-- Clique no ícone de engrenagem ⚙️ no canto superior direito do popup para:
+- Clique no ícone de engrenagem no canto superior direito do popup para:
+  - Definir o escopo do Radar (Atribuídos a mim, Todos da unidade ou Etiquetas selecionadas).
   - Alterar o intervalo de verificação (1, 2, 5, 10 ou 15 minutos).
   - Ativar ou desativar o radar sonoro.
   - Ativar ou desativar as notificações na área de trabalho.
@@ -73,7 +74,7 @@ Para acompanhar os alertas facilmente:
 
 ---
 
-## ❓ Perguntas Frequentes e Solução de Problemas
+## Perguntas Frequentes e Solução de Problemas
 
 #### A extensão mostra "Faça login no SEI" ou "Desconectado"
 - O SEI encerra a sessão por inatividade após um tempo. Basta clicar no botão **"Abrir SEI"** e efetuar login novamente. Na próxima checagem periódica, a extensão reconectará automaticamente.
