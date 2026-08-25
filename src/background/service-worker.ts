@@ -1,9 +1,4 @@
 import {
-  parseProcessosHtml,
-  extrairUsuarioLogado,
-  extrairTodosMarcadoresDaPagina,
-} from '../shared/sei-parser';
-import {
   obterConfiguracao,
   obterProcessos,
   salvarProcessos,
@@ -20,6 +15,7 @@ import type {
   DetalheMarcador,
   MensagemRuntime,
   ProcessoSei,
+  ResultadoParseHtmlSei,
   StatusSessao,
 } from '../types';
 
@@ -59,8 +55,10 @@ const atualizarBadge = async (processos: ProcessoSei[], status: StatusSessao = '
 const CAMINHO_OFFSCREEN = 'offscreen.html';
 
 /**
- * Garante que o documento offscreen (necessário para tocar áudio a partir do
- * service worker, que não tem acesso a APIs de DOM) esteja aberto
+ * Garante que o documento offscreen esteja aberto. É necessário porque o
+ * service worker do Manifest V3 não tem acesso a APIs de DOM: nem para tocar
+ * o radar sonoro, nem para usar o DOMParser exigido ao interpretar o HTML do
+ * SEI quando não há nenhuma aba aberta (fallback via fetch direto).
  */
 const garantirDocumentoOffscreen = async (): Promise<boolean> => {
   if (typeof chrome === 'undefined' || !chrome.offscreen) return false;
@@ -71,13 +69,37 @@ const garantirDocumentoOffscreen = async (): Promise<boolean> => {
 
     await chrome.offscreen.createDocument({
       url: CAMINHO_OFFSCREEN,
-      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
-      justification: 'Tocar radar sonoro ao detectar novo processo ou marcador atualizado no SEI',
+      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK, chrome.offscreen.Reason.DOM_PARSER],
+      justification:
+        'Tocar radar sonoro ao detectar novidades e interpretar o HTML do SEI com DOMParser quando não há aba aberta',
     });
     return true;
   } catch (erro) {
-    console.error('Erro ao criar documento offscreen para áudio:', erro);
+    console.error('Erro ao criar documento offscreen:', erro);
     return false;
+  }
+};
+
+/**
+ * Interpreta o HTML da página de controle do SEI delegando ao documento
+ * offscreen, já que o service worker não tem acesso a DOMParser
+ */
+const interpretarHtmlSei = async (html: string, urlBase: string): Promise<ResultadoParseHtmlSei> => {
+  const vazio: ResultadoParseHtmlSei = { processos: [], usuarioLogado: null, marcadoresDisponiveis: [] };
+
+  const disponivel = await garantirDocumentoOffscreen();
+  if (!disponivel) return vazio;
+
+  try {
+    const resposta = await chrome.runtime.sendMessage<MensagemRuntime, ResultadoParseHtmlSei>({
+      tipo: 'PARSEAR_HTML_SEI',
+      html,
+      urlBase,
+    });
+    return resposta || vazio;
+  } catch (erro) {
+    console.error('Erro ao interpretar HTML do SEI via documento offscreen:', erro);
+    return vazio;
   }
 };
 
@@ -493,17 +515,20 @@ export const executarVerificacaoSei = async (): Promise<{
       return { sucesso: false, novos: 0, total: 0, mensagem: 'Faça login no SEI' };
     }
 
-    const usuarioLogado = extrairUsuarioLogado(html);
+    const {
+      processos: processosColetados,
+      usuarioLogado,
+      marcadoresDisponiveis: marcadoresNaPagina,
+    } = await interpretarHtmlSei(html, config.urlControle);
+
     if (usuarioLogado && !config.usuarioSigla) {
       await salvarConfiguracao({ usuarioSigla: usuarioLogado });
     }
 
-    const marcadoresNaPagina = extrairTodosMarcadoresDaPagina(html);
     if (marcadoresNaPagina.length > 0) {
       await salvarMarcadoresDisponiveis(marcadoresNaPagina);
     }
 
-    const processosColetados = parseProcessosHtml(html, config.urlControle);
     const resultado = await processarNovosProcessos(processosColetados);
     await salvarStatusSessao('conectado');
     ultimoAlertaDesconexao = null;
@@ -678,6 +703,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
         case 'TOCAR_ALERTA_SONORO': {
           // Tratada pelo documento offscreen; o service worker pode receber o eco da própria mensagem
           sendResponse({ ok: true });
+          break;
+        }
+        case 'PARSEAR_HTML_SEI': {
+          // Tratada exclusivamente pelo documento offscreen (depende de DOMParser,
+          // indisponível no service worker). Não responde aqui para não competir
+          // com a resposta real do documento offscreen.
           break;
         }
         case 'LIMPAR_PROCESSOS': {

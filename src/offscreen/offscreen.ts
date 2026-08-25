@@ -1,8 +1,14 @@
 import type { MensagemRuntime } from '../types';
+import {
+  parseProcessosHtml,
+  extrairUsuarioLogado,
+  extrairTodosMarcadoresDaPagina,
+} from '../shared/sei-parser';
 
 /**
- * Documento offscreen: única forma de tocar áudio a partir do service worker
- * no Manifest V3, já que service workers não têm acesso a APIs de DOM/Audio.
+ * Documento offscreen: única forma de tocar áudio e de usar DOMParser a partir
+ * do service worker no Manifest V3, já que service workers não têm acesso a
+ * APIs de DOM/Audio.
  */
 const tocarBeep = () => {
   const contexto = new AudioContext();
@@ -27,5 +33,14 @@ chrome.runtime.onMessage.addListener((mensagem: MensagemRuntime, _sender, sendRe
   if (mensagem.tipo === 'TOCAR_ALERTA_SONORO') {
     tocarBeep();
     sendResponse({ ok: true });
+    return;
+  }
+
+  if (mensagem.tipo === 'PARSEAR_HTML_SEI') {
+    sendResponse({
+      processos: parseProcessosHtml(mensagem.html, mensagem.urlBase),
+      usuarioLogado: extrairUsuarioLogado(mensagem.html),
+      marcadoresDisponiveis: extrairTodosMarcadoresDaPagina(mensagem.html),
+    });
   }
 });

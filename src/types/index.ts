@@ -76,4 +76,11 @@ export type MensagemRuntime =
   | { tipo: 'EXTRAIR_DOM_SEI' }
   | { tipo: 'TESTAR_NOTIFICACAO' }
   | { tipo: 'TOCAR_ALERTA_SONORO' }
-  | { tipo: 'LIMPAR_PROCESSOS' };
+  | { tipo: 'LIMPAR_PROCESSOS' }
+  | { tipo: 'PARSEAR_HTML_SEI'; html: string; urlBase: string };
+
+export interface ResultadoParseHtmlSei {
+  processos: ProcessoSei[];
+  usuarioLogado: string | null;
+  marcadoresDisponiveis: string[];
+}

@@ -107,6 +107,7 @@ declare namespace chrome {
   export namespace offscreen {
     export enum Reason {
       AUDIO_PLAYBACK = 'AUDIO_PLAYBACK',
+      DOM_PARSER = 'DOM_PARSER',
     }
 
     export interface CreateDocumentOptions {
