@@ -1,28 +1,29 @@
-/* Delta UI: tokens da paleta Arctic Powder, Mystic Mint, Oceanic Noir e Saffron */
+/* Tema SEI: cinza claro, superfícies brancas, azul institucional e verde-lima. */
 :root {
-  --cor-fundo: #f1f6f4;
-  --cor-fundo-suave: #d9e8e2;
-  --cor-superficie: #f8fbfa;
-  --cor-superficie-elevada: #eef5f2;
-  --cor-borda: #b8cbc6;
-  --cor-borda-forte: #8ca9a4;
-  --cor-texto: #172b36;
-  --cor-texto-suave: #365762;
-  --cor-texto-fraco: #60777c;
-  --cor-petroleo: #114c5a;
-  --cor-petroleo-hover: #0d3e4a;
-  --cor-amarelo: #ffc801;
-  --cor-amarelo-suave: #fff2bd;
-  --cor-laranja: #ff9932;
-  --cor-sucesso: #126b5a;
-  --cor-sucesso-fundo: #d9e8e2;
-  --cor-aviso: #765000;
-  --cor-perigo: #8b3e46;
-  --cor-perigo-fundo: #f5dedd;
-  --cor-sombra: rgb(23 43 54 / 12%);
-  --cor-fundo-transparente: rgb(241 246 244 / 14%);
-  --cor-fundo-transparente-forte: rgb(241 246 244 / 24%);
-  --cor-borda-transparente: rgb(241 246 244 / 32%);
+  --cor-fundo: #f1f1f1;
+  --cor-fundo-suave: #eef0f2;
+  --cor-superficie: #ffffff;
+  --cor-superficie-elevada: #fafafa;
+  --cor-borda: #d3d9df;
+  --cor-borda-forte: #aeb8c2;
+  --cor-texto: #2f3439;
+  --cor-texto-suave: #343a40;
+  --cor-texto-fraco: #59636c;
+  --cor-texto-inverso: #ffffff;
+  --cor-petroleo: #1769a3;
+  --cor-petroleo-hover: #125684;
+  --cor-amarelo: #8cbd25;
+  --cor-amarelo-suave: #edf6d7;
+  --cor-laranja: #008fd3;
+  --cor-sucesso: #6d9f1e;
+  --cor-sucesso-fundo: #edf6d7;
+  --cor-aviso: #806417;
+  --cor-perigo: #b23b3b;
+  --cor-perigo-fundo: #fbe8e8;
+  --cor-sombra: rgb(47 52 57 / 14%);
+  --cor-fundo-transparente: rgb(241 241 241 / 14%);
+  --cor-fundo-transparente-forte: rgb(241 241 241 / 24%);
+  --cor-borda-transparente: rgb(241 241 241 / 32%);
 
   --espaco-1: 4px;
   --espaco-2: 8px;
@@ -541,8 +542,12 @@ a:focus-visible {
 }
 
 .card-marker-badge {
-  gap: var(--espaco-1);
+  gap: 0;
+  padding: 0;
   color: var(--cor-aviso);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   cursor: default;
   transition: color 150ms ease;
 }
@@ -625,9 +630,9 @@ a:focus-visible {
   min-height: 44px;
   margin-top: var(--espaco-1);
   padding: var(--espaco-2) var(--espaco-4);
-  color: var(--cor-petroleo);
-  background-color: var(--cor-amarelo);
-  border: 1px solid var(--cor-amarelo);
+  color: var(--cor-texto-inverso);
+  background-color: var(--cor-petroleo);
+  border: 1px solid var(--cor-petroleo);
   border-radius: var(--raio-pequeno);
   cursor: pointer;
   font-size: 12px;
@@ -636,14 +641,29 @@ a:focus-visible {
 }
 
 .btn-sync-inicial:hover {
-  background-color: var(--cor-laranja);
-  border-color: var(--cor-laranja);
+  background-color: var(--cor-petroleo-hover);
+  border-color: var(--cor-petroleo-hover);
   transform: translateY(-1px);
+}
+
+.btn-sync-inicial > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: var(--cor-texto-inverso);
+  stroke: var(--cor-texto-inverso);
+  opacity: 1;
+  visibility: visible;
+}
+
+.btn-sync-inicial .spin {
+  color: var(--cor-texto-inverso);
+  stroke: var(--cor-texto-inverso);
 }
 
 .btn-sync-inicial:disabled {
   cursor: default;
-  opacity: 0.6;
+  opacity: 1;
   transform: none;
 }
 
@@ -792,14 +812,14 @@ a:focus-visible {
 
 .btn-primary-full {
   width: 100%;
-  color: var(--cor-petroleo);
-  background-color: var(--cor-amarelo);
-  border: 1px solid var(--cor-amarelo);
+  color: var(--cor-texto-inverso);
+  background-color: var(--cor-petroleo);
+  border: 1px solid var(--cor-petroleo);
 }
 
 .btn-primary-full:hover {
-  background-color: var(--cor-laranja);
-  border-color: var(--cor-laranja);
+  background-color: var(--cor-petroleo-hover);
+  border-color: var(--cor-petroleo-hover);
   transform: translateY(-1px);
 }
 

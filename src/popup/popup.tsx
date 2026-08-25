@@ -229,7 +229,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
   };
 
-  // Alterna o alerta sonoro direto pelo cabeçalho (atualização otimista, sem precisar abrir Configurações)
+  // Alterna o radar sonoro direto pelo cabeçalho (atualização otimista, sem precisar abrir Configurações)
   const handleAlternarSom = async () => {
     if (!config) return;
     const somAtivo = !config.somAtivo;
@@ -341,7 +341,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       <header className="header">
         <div className="header-title-row">
           <span className="logo-badge">SEI!</span>
-          <h1 className="title">Alerta</h1>
+          <h1 className="title">Radar</h1>
         </div>
 
         <div className="header-actions">
@@ -366,8 +366,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
             <button
               className={`btn-icon ${config.somAtivo ? 'active' : ''}`}
               onClick={handleAlternarSom}
-              title={config.somAtivo ? 'Desativar alerta sonoro' : 'Ativar alerta sonoro'}
-              aria-label={config.somAtivo ? 'Desativar alerta sonoro' : 'Ativar alerta sonoro'}
+              title={config.somAtivo ? 'Desativar radar sonoro' : 'Ativar radar sonoro'}
+              aria-label={config.somAtivo ? 'Desativar radar sonoro' : 'Ativar radar sonoro'}
               aria-pressed={config.somAtivo}
             >
               {config.somAtivo ? <Bell size={15} /> : <BellOff size={15} />}
@@ -565,7 +565,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
 
           <div className="setting-toggle-row">
             <div>
-              <div className="setting-label">Alerta Sonoro</div>
+              <div className="setting-label">Radar Sonoro</div>
               <div className="setting-toggle-desc">Emitir som discreto ao receber novo processo</div>
             </div>
             <label className="toggle-switch">
@@ -768,7 +768,6 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                                 setMarcadorExpandido(expandido ? null : { numero: proc.numero, nome: m.nome });
                               }}
                             >
-                              <Tag size={9} style={{ marginRight: 3 }} />
                               {m.nome}
                               {m.texto && (expandido ? <ChevronUp size={9} style={{ marginLeft: 2 }} /> : <ChevronDown size={9} style={{ marginLeft: 2 }} />)}
                             </button>

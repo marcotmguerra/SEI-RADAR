@@ -67,7 +67,7 @@ Para acompanhar os alertas facilmente:
 ### 4. Configurar
 - Clique no ícone de engrenagem ⚙️ no canto superior direito do popup para:
   - Alterar o intervalo de verificação (1, 2, 5, 10 ou 15 minutos).
-  - Ativar ou desativar o alerta sonoro.
+  - Ativar ou desativar o radar sonoro.
   - Ativar ou desativar as notificações na área de trabalho.
   - Testar uma notificação de exemplo.
 

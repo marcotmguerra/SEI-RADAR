@@ -20,6 +20,7 @@ if (!fs.existsSync(arquivoSvg)) {
 const gerarPngs = () => {
   for (const tamanho of tamanhosIcone) {
     const destino = path.join(diretorioIcones, `icon-${tamanho}.png`);
+    const raioArredondamento = Math.round(tamanho * 0.22);
     const resultado = spawnSync(
       'magick',
       [
@@ -30,6 +31,18 @@ const gerarPngs = () => {
         `${tamanho}x${tamanho}`,
         '-define',
         'png:color-type=6',
+        '(',
+        '-size',
+        `${tamanho}x${tamanho}`,
+        'xc:none',
+        '-fill',
+        'white',
+        '-draw',
+        `roundrectangle 0,0 ${tamanho - 1},${tamanho - 1} ${raioArredondamento},${raioArredondamento}`,
+        ')',
+        '-compose',
+        'CopyOpacity',
+        '-composite',
         destino,
       ],
       { stdio: 'inherit' }
@@ -43,17 +56,7 @@ const gerarPngs = () => {
   return true;
 };
 
-const pngsEstaoAtualizados = () => {
-  const dataSvg = fs.statSync(arquivoSvg).mtimeMs;
-  return tamanhosIcone.every((tamanho) => {
-    const caminhoPng = path.join(diretorioIcones, `icon-${tamanho}.png`);
-    return fs.existsSync(caminhoPng) && fs.statSync(caminhoPng).mtimeMs >= dataSvg;
-  });
-};
-
-if (pngsEstaoAtualizados()) {
-  console.log('Ícones PNG já estão atualizados a partir de icons/icon.svg');
-} else if (gerarPngs()) {
+if (gerarPngs()) {
   console.log('Ícones PNG gerados a partir de icons/icon.svg');
 } else {
   const faltantes = tamanhosIcone.filter(

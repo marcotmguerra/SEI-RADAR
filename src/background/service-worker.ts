@@ -63,7 +63,7 @@ const garantirDocumentoOffscreen = async (): Promise<boolean> => {
     await chrome.offscreen.createDocument({
       url: CAMINHO_OFFSCREEN,
       reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
-      justification: 'Tocar alerta sonoro ao detectar novo processo ou marcador atualizado no SEI',
+      justification: 'Tocar radar sonoro ao detectar novo processo ou marcador atualizado no SEI',
     });
     return true;
   } catch (erro) {
@@ -73,7 +73,7 @@ const garantirDocumentoOffscreen = async (): Promise<boolean> => {
 };
 
 /**
- * Toca o alerta sonoro via documento offscreen. O campo "silent" das notificações
+ * Toca o radar sonoro via documento offscreen. O campo "silent" das notificações
  * nativas do Chrome depende do daemon de notificação do SO (frequentemente mudo
  * em Linux), então o som real é gerado aqui via Web Audio API.
  */
@@ -84,7 +84,7 @@ const tocarAlertaSonoro = async (): Promise<void> => {
   try {
     await chrome.runtime.sendMessage({ tipo: 'TOCAR_ALERTA_SONORO' });
   } catch (erro) {
-    console.error('Erro ao solicitar reprodução do alerta sonoro:', erro);
+    console.error('Erro ao solicitar reprodução do radar sonoro:', erro);
   }
 };
 

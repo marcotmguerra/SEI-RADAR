@@ -154,7 +154,7 @@ Clique no ícone de **engrenagem ⚙️** no canto superior direito do popup par
 | **Marcadores para Notificar** | Quando selecionada a regra mista, permite escolher quais marcadores (ex: `Urgente`) devem acionar alertas. |
 | **Intervalo de Verificação** | Define a frequência de checagem automática (1, 2, 5, 10 ou 15 minutos). |
 | **Notificações no Sistema** | Ativa ou silencia os popups nativos de notificação na área de trabalho. |
-| **Alerta Sonoro** | Ativa ou desativa o aviso sonoro discreto ao receber processos. |
+| **Radar Sonoro** | Ativa ou desativa o aviso sonoro discreto ao receber processos. |
 | **Testar Notificação** | Dispara uma notificação de demonstração para testar som e visualização no seu sistema operacional. |
 
 ---
@@ -184,4 +184,3 @@ Foi projetado exatamente para o seu conforto! Na primeira vez que a extensão l�
 ---
 
 *CRM-SEI — Produtividade e agilidade no acompanhamento dos seus processos eletrônicos.*
-

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Extensão de navegador leve para monitoramento de novos processos no SEI com extração de assunto e alertas nativos.",
+  "description": "Extensão de navegador leve para monitoramento de novos processos no SEI com extração de assunto e radar nativo.",
   "scripts": {
     "dev": "vite",
     "build": "node scripts/generate-icons.js && vite build && vite build --config vite.content.config.ts",
