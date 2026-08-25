@@ -1,11 +1,20 @@
-import { parseProcessosHtml, extrairUsuarioLogado } from '../shared/sei-parser';
+import {
+  parseProcessosHtml,
+  extrairUsuarioLogado,
+  extrairTodosMarcadoresDaPagina,
+} from '../shared/sei-parser';
 import {
   obterConfiguracao,
   obterProcessos,
   salvarProcessos,
   salvarStatusSessao,
   salvarConfiguracao,
+  salvarMarcadoresDisponiveis,
 } from '../shared/storage';
+import {
+  processoPertenceAoRadar,
+  filtrarProcessosPorRadar,
+} from '../shared/radar';
 import type {
   ConfiguracaoExtensao,
   DetalheMarcador,
@@ -283,11 +292,27 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
   const mapaArmazenados = new Map(processosArmazenados.map((p) => [p.numero, p]));
   const agora = new Date().toISOString();
 
+  // Coleta e salva marcadores disponíveis encontrados em todos os processos da página
+  const marcadoresEncontrados: string[] = [];
+  for (const p of processosColetados) {
+    if (p.marcadores) {
+      for (const m of p.marcadores) {
+        if (m.nome) marcadoresEncontrados.push(m.nome);
+      }
+    }
+  }
+  if (marcadoresEncontrados.length > 0) {
+    await salvarMarcadoresDisponiveis(marcadoresEncontrados);
+  }
+
+  // Filtra os processos coletados conforme o escopo do Radar pessoal
+  const processosDoRadar = processosColetados.filter((p) => processoPertenceAoRadar(p, config));
+
   const novosProcessos: ProcessoSei[] = [];
   const processosComMarcadorAtualizado: { processo: ProcessoSei; alterados: DetalheMarcador[] }[] = [];
   const listaAtualizada: ProcessoSei[] = [];
 
-  for (const coletado of processosColetados) {
+  for (const coletado of processosDoRadar) {
     const existente = mapaArmazenados.get(coletado.numero);
     if (!existente) {
       novosProcessos.push(coletado);
@@ -320,9 +345,12 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
     }
   }
 
-  // Preserva processos já conhecidos que não vieram na listagem da página atual
+  // Preserva processos já conhecidos que não vieram na listagem da página atual, desde que ainda pertençam ao radar
   for (const proc of processosArmazenados) {
-    if (!listaAtualizada.some((p) => p.numero === proc.numero)) {
+    if (
+      !listaAtualizada.some((p) => p.numero === proc.numero) &&
+      processoPertenceAoRadar(proc, config)
+    ) {
       listaAtualizada.push(proc);
     }
   }
@@ -390,6 +418,7 @@ export const executarVerificacaoSei = async (): Promise<{
             processos: ProcessoSei[];
             urlAtual?: string;
             usuarioLogado?: string;
+            marcadoresDisponiveis?: string[];
           }>(aba.id, { tipo: 'EXTRAIR_DOM_SEI' });
 
           if (respostaTab && respostaTab.autenticado) {
@@ -402,6 +431,12 @@ export const executarVerificacaoSei = async (): Promise<{
             }
             if (Object.keys(atualizacoes).length > 0) {
               await salvarConfiguracao(atualizacoes);
+            }
+            if (
+              Array.isArray(respostaTab.marcadoresDisponiveis) &&
+              respostaTab.marcadoresDisponiveis.length > 0
+            ) {
+              await salvarMarcadoresDisponiveis(respostaTab.marcadoresDisponiveis);
             }
             const resultado = await processarNovosProcessos(respostaTab.processos || []);
             await salvarStatusSessao('conectado');
@@ -461,6 +496,11 @@ export const executarVerificacaoSei = async (): Promise<{
     const usuarioLogado = extrairUsuarioLogado(html);
     if (usuarioLogado && !config.usuarioSigla) {
       await salvarConfiguracao({ usuarioSigla: usuarioLogado });
+    }
+
+    const marcadoresNaPagina = extrairTodosMarcadoresDaPagina(html);
+    if (marcadoresNaPagina.length > 0) {
+      await salvarMarcadoresDisponiveis(marcadoresNaPagina);
     }
 
     const processosColetados = parseProcessosHtml(html, config.urlControle);
@@ -527,12 +567,18 @@ const configurarAlarme = async () => {
 if (typeof chrome !== 'undefined' && chrome.runtime) {
   chrome.runtime.onInstalled?.addListener(async () => {
     await configurarAlarme();
-    await executarVerificacaoSei();
+    const config = await obterConfiguracao();
+    if (config.radarOnboardingConcluido) {
+      await executarVerificacaoSei();
+    }
   });
 
   chrome.alarms?.onAlarm?.addListener(async (alarme) => {
     if (alarme.name === NOME_ALARME) {
-      await executarVerificacaoSei();
+      const config = await obterConfiguracao();
+      if (config.radarOnboardingConcluido) {
+        await executarVerificacaoSei();
+      }
     }
   });
 
@@ -577,8 +623,28 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
           break;
         }
         case 'SALVAR_CONFIGURACAO': {
-          await salvarConfiguracao(mensagem.configuracao);
+          const configAnterior = await obterConfiguracao();
+          const novaConfig = await salvarConfiguracao(mensagem.configuracao);
           await configurarAlarme();
+
+          const escopoMudou =
+            configAnterior.escopoRadar !== novaConfig.escopoRadar ||
+            configAnterior.usuarioSigla !== novaConfig.usuarioSigla ||
+            JSON.stringify(configAnterior.marcadoresRadar || []) !==
+              JSON.stringify(novaConfig.marcadoresRadar || []);
+
+          if (escopoMudou) {
+            // Remove do armazenamento local os processos que deixaram de pertencer ao novo radar
+            const processosAtuais = await obterProcessos();
+            const filtrados = filtrarProcessosPorRadar(processosAtuais, novaConfig);
+            await salvarProcessos(filtrados);
+            await atualizarBadge(filtrados, 'conectado');
+
+            // Silencia a próxima sincronização para não disparar notificações de processos históricos
+            await salvarConfiguracao({ primeiraCargaRealizada: false });
+            await executarVerificacaoSei();
+          }
+
           sendResponse({ ok: true });
           break;
         }
@@ -596,6 +662,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
           if (Object.keys(atualizacoesConfig).length > 0) {
             await salvarConfiguracao(atualizacoesConfig);
           }
+          if (
+            Array.isArray(mensagem.marcadoresDisponiveis) &&
+            mensagem.marcadoresDisponiveis.length > 0
+          ) {
+            await salvarMarcadoresDisponiveis(mensagem.marcadoresDisponiveis);
+          }
           if (mensagem.autenticado || (Array.isArray(mensagem.processos) && mensagem.processos.length > 0)) {
             await processarNovosProcessos(mensagem.processos || []);
             await salvarStatusSessao('conectado');
@@ -605,6 +677,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
         }
         case 'TOCAR_ALERTA_SONORO': {
           // Tratada pelo documento offscreen; o service worker pode receber o eco da própria mensagem
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'LIMPAR_PROCESSOS': {
+          await salvarProcessos([]);
+          await atualizarBadge([], 'conectado');
+          // Evita que a próxima sincronização notifique o histórico recoletado
+          await salvarConfiguracao({ primeiraCargaRealizada: false });
           sendResponse({ ok: true });
           break;
         }

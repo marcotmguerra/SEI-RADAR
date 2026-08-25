@@ -1,4 +1,8 @@
-import { parseProcessosHtml, extrairUsuarioLogado } from '../shared/sei-parser';
+import {
+  parseProcessosHtml,
+  extrairUsuarioLogado,
+  extrairTodosMarcadoresDaPagina,
+} from '../shared/sei-parser';
 import type { MensagemRuntime, ProcessoSei } from '../types';
 
 /**
@@ -27,6 +31,7 @@ const sincronizarPaginaSei = () => {
     const urlAtual = window.location.href;
     const processos = parseProcessosHtml(html, urlAtual);
     const usuarioLogado = extrairUsuarioLogado(document) || undefined;
+    const marcadoresDisponiveis = extrairTodosMarcadoresDaPagina(document);
 
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       const mensagem: MensagemRuntime = {
@@ -35,6 +40,7 @@ const sincronizarPaginaSei = () => {
         urlAtual,
         autenticado,
         usuarioLogado,
+        marcadoresDisponiveis,
       };
 
       chrome.runtime.sendMessage(mensagem).catch(() => {
@@ -60,7 +66,14 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
       const autenticado = verificarAutenticacao();
       const processos = parseProcessosHtml(document.documentElement.outerHTML, window.location.href);
       const usuarioLogado = extrairUsuarioLogado(document) || undefined;
-      sendResponse({ autenticado, processos, urlAtual: window.location.href, usuarioLogado });
+      const marcadoresDisponiveis = extrairTodosMarcadoresDaPagina(document);
+      sendResponse({
+        autenticado,
+        processos,
+        urlAtual: window.location.href,
+        usuarioLogado,
+        marcadoresDisponiveis,
+      });
     }
   });
 }

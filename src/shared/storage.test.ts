@@ -6,8 +6,11 @@ import {
   salvarProcessos,
   marcarProcessoComoLido,
   marcarTodosProcessosComoLidos,
+  limparProcessos,
   obterStatusSessao,
   salvarStatusSessao,
+  obterMarcadoresDisponiveis,
+  salvarMarcadoresDisponiveis,
 } from './storage';
 import type { ProcessoSei } from '../types';
 
@@ -16,7 +19,7 @@ describe('Storage Manager', () => {
     localStorage.clear();
   });
 
-  it('retorna configurações padrão inicialmente', async () => {
+  it('retorna configurações padrão inicialmente para nova instalação', async () => {
     const config = await obterConfiguracao();
     expect(config.intervaloMinutos).toBe(5);
     expect(config.somAtivo).toBe(true);
@@ -25,10 +28,36 @@ describe('Storage Manager', () => {
     expect(config.usuarioSigla).toBe('');
     expect(config.marcadoresNotificacao).toEqual([]);
     expect(config.primeiraCargaRealizada).toBe(false);
+    expect(config.escopoRadar).toBe('atribuidos');
+    expect(config.marcadoresRadar).toEqual([]);
+    expect(config.radarOnboardingConcluido).toBe(false);
     expect(config.urlControle).toContain('controlador.php?acao=procedimento_controlar');
   });
 
-  it('salva e recupera alterações de configuração', async () => {
+  it('migra usuários legados automaticamente sem alterar comportamento', async () => {
+    // Simula storage antigo de usuário que já utilizava a extensão
+    localStorage.setItem(
+      'sei_monitor_configuracao',
+      JSON.stringify({
+        intervaloMinutos: 5,
+        somAtivo: true,
+        notificacoesAtivas: true,
+        regraNotificacao: 'atribuidos',
+        usuarioSigla: '00652162614',
+        marcadoresNotificacao: ['Urgente'],
+        primeiraCargaRealizada: true,
+      })
+    );
+
+    const configMigrada = await obterConfiguracao();
+    expect(configMigrada.radarOnboardingConcluido).toBe(true);
+    expect(configMigrada.escopoRadar).toBe('unidade'); // Mantém o comportamento original
+    expect(configMigrada.usuarioSigla).toBe('00652162614');
+    expect(configMigrada.marcadoresRadar).toEqual(['Urgente']);
+    expect(configMigrada.primeiraCargaRealizada).toBe(true);
+  });
+
+  it('salva e recupera alterações de configuração incluindo radar', async () => {
     await salvarConfiguracao({
       intervaloMinutos: 10,
       somAtivo: false,
@@ -36,6 +65,9 @@ describe('Storage Manager', () => {
       usuarioSigla: 'MG123456',
       marcadoresNotificacao: ['Urgente', 'Licitação'],
       primeiraCargaRealizada: true,
+      escopoRadar: 'marcadores',
+      marcadoresRadar: ['Urgente', 'Licitação'],
+      radarOnboardingConcluido: true,
     });
     const atualizado = await obterConfiguracao();
     expect(atualizado.intervaloMinutos).toBe(10);
@@ -45,6 +77,20 @@ describe('Storage Manager', () => {
     expect(atualizado.usuarioSigla).toBe('MG123456');
     expect(atualizado.marcadoresNotificacao).toEqual(['Urgente', 'Licitação']);
     expect(atualizado.primeiraCargaRealizada).toBe(true);
+    expect(atualizado.escopoRadar).toBe('marcadores');
+    expect(atualizado.marcadoresRadar).toEqual(['Urgente', 'Licitação']);
+    expect(atualizado.radarOnboardingConcluido).toBe(true);
+  });
+
+  it('gerencia marcadores disponíveis com deduplicação case-insensitive', async () => {
+    expect(await obterMarcadoresDisponiveis()).toEqual([]);
+
+    await salvarMarcadoresDisponiveis(['Urgente', 'Licitações', 'urgente', 'FINANCEIRO']);
+    const salvos = await obterMarcadoresDisponiveis();
+    expect(salvos).toContain('Urgente');
+    expect(salvos).toContain('Licitações');
+    expect(salvos).toContain('FINANCEIRO');
+    expect(salvos.filter((m) => m.toLowerCase() === 'urgente')).toHaveLength(1);
   });
 
   it('gerencia lista de processos e marcação de lidos', async () => {
@@ -77,6 +123,22 @@ describe('Storage Manager', () => {
     // Marca todos como lidos
     const todosLidos = await marcarTodosProcessosComoLidos();
     expect(todosLidos.every((p) => p.lido)).toBe(true);
+  });
+
+  it('limpa todos os processos sincronizados', async () => {
+    await salvarProcessos([
+      {
+        numero: '1400.01.000300/2026-03',
+        assunto: 'Assunto 3',
+        link: 'https://sei.mg.gov.br/3',
+        detectadoEm: new Date().toISOString(),
+        lido: false,
+      },
+    ]);
+    expect(await obterProcessos()).toHaveLength(1);
+
+    await limparProcessos();
+    expect(await obterProcessos()).toEqual([]);
   });
 
   it('salva e recupera status da sessão', async () => {

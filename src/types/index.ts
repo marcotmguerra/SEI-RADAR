@@ -16,6 +16,8 @@ export interface ProcessoSei {
   motivoAtualizacao?: string;
 }
 
+export type EscopoRadar = 'unidade' | 'atribuidos' | 'marcadores';
+
 export type RegraNotificacao = 'todos' | 'atribuidos' | 'atribuidos_e_marcadores';
 
 export interface ConfiguracaoExtensao {
@@ -27,6 +29,9 @@ export interface ConfiguracaoExtensao {
   usuarioSigla: string;
   marcadoresNotificacao: string[];
   primeiraCargaRealizada: boolean;
+  escopoRadar: EscopoRadar;
+  marcadoresRadar: string[];
+  radarOnboardingConcluido: boolean;
 }
 
 export type StatusSessao = 'conectado' | 'desconectado' | 'verificando' | 'erro';
@@ -48,6 +53,9 @@ export const CONFIGURACAO_PADRAO: ConfiguracaoExtensao = {
   usuarioSigla: '',
   marcadoresNotificacao: [],
   primeiraCargaRealizada: false,
+  escopoRadar: 'atribuidos',
+  marcadoresRadar: [],
+  radarOnboardingConcluido: false,
 };
 
 export type MensagemRuntime =
@@ -63,6 +71,9 @@ export type MensagemRuntime =
       urlAtual?: string;
       autenticado?: boolean;
       usuarioLogado?: string;
+      marcadoresDisponiveis?: string[];
     }
+  | { tipo: 'EXTRAIR_DOM_SEI' }
   | { tipo: 'TESTAR_NOTIFICACAO' }
-  | { tipo: 'TOCAR_ALERTA_SONORO' };
+  | { tipo: 'TOCAR_ALERTA_SONORO' }
+  | { tipo: 'LIMPAR_PROCESSOS' };

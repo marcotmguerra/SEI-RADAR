@@ -6,6 +6,7 @@ import {
   extrairAtribuicaoDaLinha,
   extrairMarcadoresDaLinha,
   extrairUsuarioLogado,
+  extrairTodosMarcadoresDaPagina,
 } from './sei-parser';
 
 describe('SEI Parser', () => {
@@ -237,6 +238,40 @@ describe('SEI Parser', () => {
       expect(processos).toHaveLength(1);
       expect(processos[0]?.numero).toBe('1400.01.000031/2026-09');
       expect(processos[0]?.assunto).toBe('Relatório mensal de desempenho');
+    });
+  });
+
+  describe('extrairTodosMarcadoresDaPagina', () => {
+    it('extrai marcadores de select de filtro do SEI e das linhas da tabela', () => {
+      const html = `
+        <html>
+          <body>
+            <select id="selMarcador">
+              <option value="">Todos</option>
+              <option value="1">Urgente</option>
+              <option value="2">Licitação / Contrato</option>
+            </select>
+            <table>
+              <tr>
+                <td>
+                  <a href="controlador.php?acao=andamento_marcador_gerenciar" title="Marcador: Almoxarifado">🏷️</a>
+                </td>
+              </tr>
+            </table>
+          </body>
+        </html>
+      `;
+
+      const marcadores = extrairTodosMarcadoresDaPagina(html);
+      expect(marcadores).toContain('Urgente');
+      expect(marcadores).toContain('Licitação / Contrato');
+      expect(marcadores).toContain('Almoxarifado');
+      expect(marcadores).not.toContain('Todos');
+    });
+
+    it('retorna array vazio para páginas sem marcadores ou inputs inválidos', () => {
+      expect(extrairTodosMarcadoresDaPagina('')).toEqual([]);
+      expect(extrairTodosMarcadoresDaPagina('<html><body><div>Sem tags</div></body></html>')).toEqual([]);
     });
   });
 });

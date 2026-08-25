@@ -20,17 +20,38 @@ import {
   AlertTriangle,
   BellOff,
   PanelRight,
+  Target,
+  Check,
+  ShieldCheck,
+  SlidersHorizontal,
+  ArrowRight,
+  ArrowLeft,
+  Inbox,
+  Trash2,
 } from 'lucide-react';
 import {
   obterConfiguracao,
   obterProcessos,
   obterStatusSessao,
+  obterMarcadoresDisponiveis,
   marcarProcessoComoLido,
   marcarTodosProcessosComoLidos,
   salvarConfiguracao,
+  limparProcessos,
 } from '../shared/storage';
+import {
+  ehProcessoAtribuido,
+  descreverEscopoRadar,
+  normalizarParaComparacao,
+} from '../shared/radar';
 import { suportaPainelLateral } from '../shared/painel-lateral';
-import type { ConfiguracaoExtensao, ProcessoSei, StatusSessao, RegraNotificacao } from '../types';
+import type {
+  ConfiguracaoExtensao,
+  ProcessoSei,
+  StatusSessao,
+  RegraNotificacao,
+  EscopoRadar,
+} from '../types';
 
 const formatarHora = (dataIso: string): string => {
   try {
@@ -47,17 +68,8 @@ const formatarHora = (dataIso: string): string => {
   }
 };
 
-// Normaliza para dígitos quando o valor parece um CPF (11+ dígitos), senão compara como texto simples
-const normalizarParaComparacao = (valor: string): string => {
-  const digitos = valor.replace(/\D/g, '');
-  return digitos.length >= 11 ? digitos : valor.trim().toLowerCase();
-};
-
 const ehMeuProcesso = (proc: ProcessoSei, sigla?: string): boolean => {
-  if (!sigla || !sigla.trim() || !proc.atribuidoPara) return false;
-  const s = normalizarParaComparacao(sigla);
-  const a = normalizarParaComparacao(proc.atribuidoPara);
-  return a.includes(s) || s.includes(a);
+  return ehProcessoAtribuido(proc, sigla);
 };
 
 type PeriodoFiltro = 'todos' | 'hoje' | 'ontem';
@@ -90,6 +102,7 @@ interface PopupAppProps {
 export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const [processos, setProcessos] = useState<ProcessoSei[]>([]);
   const [config, setConfig] = useState<ConfiguracaoExtensao | null>(null);
+  const [marcadoresDisponiveis, setMarcadoresDisponiveis] = useState<string[]>([]);
   const [status, setStatus] = useState<StatusSessao>('verificando');
   const [ultimaVerificacao, setUltimaVerificacao] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -98,23 +111,37 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const [periodoFiltro, setPeriodoFiltro] = useState<PeriodoFiltro>('todos');
   const [marcadorFiltro, setMarcadorFiltro] = useState<string | null>(null);
   const [marcadorExpandido, setMarcadorExpandido] = useState<{ numero: string; nome: string } | null>(null);
-  const [novoMarcadorInput, setNovoMarcadorInput] = useState('');
   const [exibindoConfig, setExibindoConfig] = useState(false);
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
   const [idJanelaAtual, setIdJanelaAtual] = useState<number | null>(null);
+  const [confirmandoLimpeza, setConfirmandoLimpeza] = useState(false);
+  const timeoutConfirmacaoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Estados temporários para Onboarding
+  const [onboardingEscopo, setOnboardingEscopo] = useState<EscopoRadar>('atribuidos');
+  const [onboardingCpf, setOnboardingCpf] = useState('');
+  const [onboardingMarcadores, setOnboardingMarcadores] = useState<string[]>([]);
 
   // Carrega dados iniciais e dispara checagem rápida
   const carregarDados = async () => {
     try {
-      const [procs, conf, sessao] = await Promise.all([
+      const [procs, conf, sessao, marcadores] = await Promise.all([
         obterProcessos(),
         obterConfiguracao(),
         obterStatusSessao(),
+        obterMarcadoresDisponiveis(),
       ]);
       setProcessos(procs);
       setConfig(conf);
       setStatus(sessao.status);
       setUltimaVerificacao(sessao.ultimaVerificacao);
+      setMarcadoresDisponiveis(marcadores);
+
+      if (conf) {
+        setOnboardingEscopo(conf.escopoRadar || 'atribuidos');
+        setOnboardingCpf(conf.usuarioSigla || '');
+        setOnboardingMarcadores(conf.marcadoresRadar || []);
+      }
     } catch (erro) {
       console.error('Erro ao carregar dados do popup:', erro);
     }
@@ -130,9 +157,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     }
   }, []);
 
-  // Pré-carrega o windowId no mount para que o clique em "Abrir na lateral" possa
-  // chamar chrome.sidePanel.open() de forma síncrona (a API exige gesto do usuário,
-  // que não sobrevive de forma confiável a um await intermediário)
+  // Pré-carrega o windowId no mount para abrir na lateral
   useEffect(() => {
     if (modoLateral || !suportaPainelLateral()) return;
 
@@ -147,7 +172,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
   }, [modoLateral]);
 
-  // Dispara verificação manual imediata (duração mínima para o spinner ficar perceptível)
+  // Limpa o timeout de confirmação pendente ao desmontar
+  useEffect(() => {
+    return () => {
+      if (timeoutConfirmacaoRef.current) clearTimeout(timeoutConfirmacaoRef.current);
+    };
+  }, []);
+
+  // Dispara verificação manual imediata
   const handleVerificarAgora = async () => {
     setCarregando(true);
     const inicio = Date.now();
@@ -189,21 +221,77 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     setProcessos(atualizados);
   };
 
+  // Remove do armazenamento todos os processos sincronizados (exige confirmação em dois cliques)
+  const handleLimparProcessos = async () => {
+    if (!confirmandoLimpeza) {
+      setConfirmandoLimpeza(true);
+      timeoutConfirmacaoRef.current = setTimeout(() => setConfirmandoLimpeza(false), 4000);
+      return;
+    }
+
+    if (timeoutConfirmacaoRef.current) {
+      clearTimeout(timeoutConfirmacaoRef.current);
+      timeoutConfirmacaoRef.current = null;
+    }
+    setConfirmandoLimpeza(false);
+
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      await chrome.runtime.sendMessage({ tipo: 'LIMPAR_PROCESSOS' });
+    } else {
+      await limparProcessos();
+    }
+
+    setProcessos([]);
+    await carregarDados();
+    setMensagemAviso('Processos removidos.');
+    setTimeout(() => setMensagemAviso(null), 1500);
+  };
+
   // Salva alterações de configuração
-  const handleSalvarConfig = async () => {
+  const handleSalvarConfig = async (novaConfiguracao?: Partial<ConfiguracaoExtensao>) => {
     if (!config) return;
-    await salvarConfiguracao(config);
+    const configAtualizada = { ...config, ...(novaConfiguracao || {}) };
+    setConfig(configAtualizada);
+    await salvarConfiguracao(configAtualizada);
+
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       await chrome.runtime.sendMessage({
         tipo: 'SALVAR_CONFIGURACAO',
-        configuracao: config,
+        configuracao: configAtualizada,
       });
     }
+
     setMensagemAviso('Configurações salvas!');
+    await carregarDados();
     setTimeout(() => {
       setMensagemAviso(null);
       setExibindoConfig(false);
-    }, 1200);
+    }, 1000);
+  };
+
+  // Handlers do Onboarding
+  const handleConcluirOnboarding = async () => {
+    if (!config) return;
+    const atualizacoes: Partial<ConfiguracaoExtensao> = {
+      escopoRadar: onboardingEscopo,
+      usuarioSigla: onboardingCpf || config.usuarioSigla,
+      marcadoresRadar: onboardingMarcadores,
+      radarOnboardingConcluido: true,
+      primeiraCargaRealizada: false,
+    };
+    await handleSalvarConfig(atualizacoes);
+    await handleVerificarAgora();
+  };
+
+  const handleConfigurarDepois = async () => {
+    if (!config) return;
+    const atualizacoes: Partial<ConfiguracaoExtensao> = {
+      escopoRadar: 'unidade',
+      radarOnboardingConcluido: true,
+      primeiraCargaRealizada: false,
+    };
+    await handleSalvarConfig(atualizacoes);
+    await handleVerificarAgora();
   };
 
   // Dispara notificação de teste
@@ -213,8 +301,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     }
   };
 
-  // Abre o painel lateral. NÃO transformar em async: chrome.sidePanel.open() exige
-  // gesto do usuário e nenhum await pode precedê-lo, ou a chamada falha silenciosamente.
+  // Abre o painel lateral de forma síncrona
   const handleAbrirNaLateral = () => {
     if (!suportaPainelLateral() || idJanelaAtual === null) return;
 
@@ -229,7 +316,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
   };
 
-  // Alterna o radar sonoro direto pelo cabeçalho (atualização otimista, sem precisar abrir Configurações)
+  // Alterna o radar sonoro direto pelo cabeçalho
   const handleAlternarSom = async () => {
     if (!config) return;
     const somAtivo = !config.somAtivo;
@@ -243,23 +330,69 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     }
   };
 
-  // Todos os marcadores únicos detectados na base
+  // Combinação de todos os marcadores únicos conhecidos
   const todosMarcadores = useMemo(() => {
-    const set = new Set<string>();
+    const mapa = new Map<string, string>();
+    for (const m of marcadoresDisponiveis) {
+      if (m && m.trim()) mapa.set(m.trim().toLowerCase(), m.trim());
+    }
     for (const proc of processos) {
       if (proc.marcadores) {
         for (const m of proc.marcadores) {
-          if (m.nome && m.nome.trim()) set.add(m.nome.trim());
+          if (m.nome && m.nome.trim()) mapa.set(m.nome.trim().toLowerCase(), m.nome.trim());
         }
+      }
+    }
+    if (config?.marcadoresRadar) {
+      for (const m of config.marcadoresRadar) {
+        if (m && m.trim()) mapa.set(m.trim().toLowerCase(), m.trim());
       }
     }
     if (config?.marcadoresNotificacao) {
       for (const m of config.marcadoresNotificacao) {
-        if (m && m.trim()) set.add(m.trim());
+        if (m && m.trim()) mapa.set(m.trim().toLowerCase(), m.trim());
       }
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR', { sensitivity: 'base' }));
-  }, [processos, config?.marcadoresNotificacao]);
+    return Array.from(mapa.values()).sort((a, b) =>
+      a.localeCompare(b, 'pt-BR', { sensitivity: 'base' })
+    );
+  }, [marcadoresDisponiveis, processos, config?.marcadoresRadar, config?.marcadoresNotificacao]);
+
+  // Alterna marcador no onboarding
+  const alternarMarcadorOnboarding = (marcador: string) => {
+    const existe = onboardingMarcadores.some(
+      (m) => m.toLowerCase().trim() === marcador.toLowerCase().trim()
+    );
+    if (existe) {
+      setOnboardingMarcadores(
+        onboardingMarcadores.filter((m) => m.toLowerCase().trim() !== marcador.toLowerCase().trim())
+      );
+    } else {
+      setOnboardingMarcadores([...onboardingMarcadores, marcador]);
+    }
+  };
+
+  // Alterna marcador nas configurações do radar
+  const alternarMarcadorRadar = (marcador: string) => {
+    if (!config) return;
+    const lista = config.marcadoresRadar || [];
+    const existe = lista.some((m) => m.toLowerCase().trim() === marcador.toLowerCase().trim());
+    const atualizada = existe
+      ? lista.filter((m) => m.toLowerCase().trim() !== marcador.toLowerCase().trim())
+      : [...lista, marcador];
+    setConfig({ ...config, marcadoresRadar: atualizada });
+  };
+
+  // Alterna marcador nas notificações
+  const alternarMarcadorNotificacao = (marcador: string) => {
+    if (!config) return;
+    const lista = config.marcadoresNotificacao || [];
+    const existe = lista.some((m) => m.toLowerCase().trim() === marcador.toLowerCase().trim());
+    const atualizada = existe
+      ? lista.filter((m) => m.toLowerCase().trim() !== marcador.toLowerCase().trim())
+      : [...lista, marcador];
+    setConfig({ ...config, marcadoresNotificacao: atualizada });
+  };
 
   // Contagem de processos atribuídos a mim
   const totalMeus = useMemo(() => {
@@ -270,7 +403,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     return processos.filter((p) => !p.lido).length;
   }, [processos]);
 
-  // Resumo do expediente: novidades de hoje e quantas são atribuídas a mim
+  // Resumo do expediente
   const resumoHoje = useMemo(() => {
     const doDia = processos.filter((p) => ehHoje(p.detectadoEm));
     return {
@@ -293,7 +426,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
 
         // Filtro de Marcador
         if (marcadorFiltro) {
-          if (!p.marcadores || !p.marcadores.some((m) => m.nome === marcadorFiltro)) return false;
+          if (
+            !p.marcadores ||
+            !p.marcadores.some(
+              (m) => m.nome.trim().toLowerCase() === marcadorFiltro.trim().toLowerCase()
+            )
+          ) {
+            return false;
+          }
         }
 
         // Filtro de busca textual
@@ -317,23 +457,202 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       .sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime());
   }, [processos, filtroTipo, periodoFiltro, marcadorFiltro, termoBusca, config?.usuarioSigla]);
 
-  const alternarMarcadorNotificacao = (marcador: string) => {
-    if (!config) return;
-    const lista = config.marcadoresNotificacao || [];
-    const existe = lista.includes(marcador);
-    const atualizada = existe ? lista.filter((m) => m !== marcador) : [...lista, marcador];
-    setConfig({ ...config, marcadoresNotificacao: atualizada });
-  };
+  // Renderização da tela de Onboarding Inicial
+  if (config && !config.radarOnboardingConcluido) {
+    const onboardingSemEtiquetas =
+      onboardingEscopo === 'marcadores' && onboardingMarcadores.length === 0;
+    const previaEscopo = descreverEscopoRadar({
+      ...config,
+      escopoRadar: onboardingEscopo,
+      usuarioSigla: onboardingCpf || config.usuarioSigla,
+      marcadoresRadar: onboardingMarcadores,
+    });
 
-  const adicionarMarcadorPersonalizado = () => {
-    if (!config || !novoMarcadorInput.trim()) return;
-    const marcador = novoMarcadorInput.trim();
-    const lista = config.marcadoresNotificacao || [];
-    if (!lista.includes(marcador)) {
-      setConfig({ ...config, marcadoresNotificacao: [...lista, marcador] });
-    }
-    setNovoMarcadorInput('');
-  };
+    return (
+      <div className="popup-container onboarding-container">
+        <header className="onboarding-header">
+          <div className="header-title-row">
+            <span className="logo-badge">SEI!</span>
+            <h1 className="title">Configure seu Radar</h1>
+          </div>
+          <p className="onboarding-subtitle">
+            Escolha o que você quer acompanhar — leva 10 segundos.
+          </p>
+        </header>
+
+        <div className="onboarding-content">
+          <div className="scope-selection-list" role="radiogroup" aria-label="Escopo do Radar">
+            {/* Opção 1: Atribuídos a mim (Recomendada) */}
+            <label className={`scope-card ${onboardingEscopo === 'atribuidos' ? 'active' : ''}`}>
+              <input
+                type="radio"
+                name="onboarding-escopo"
+                className="scope-card-input"
+                checked={onboardingEscopo === 'atribuidos'}
+                onChange={() => setOnboardingEscopo('atribuidos')}
+              />
+              <div className="scope-card-header">
+                <span className="scope-card-icon">
+                  <User size={16} />
+                </span>
+                <div className="scope-card-info">
+                  <div className="scope-card-title-row">
+                    <span className="scope-title">Processos atribuídos a mim</span>
+                    <span className="badge-recommendation">Recomendada</span>
+                  </div>
+                  <p className="scope-desc">
+                    Acompanhe somente os processos que estão sob sua responsabilidade direta.
+                  </p>
+                </div>
+                <div className="scope-card-radio">
+                  <div className={`radio-dot ${onboardingEscopo === 'atribuidos' ? 'checked' : ''}`} />
+                </div>
+              </div>
+
+              {onboardingEscopo === 'atribuidos' && (
+                <div className="scope-card-expanded" onClick={(e) => e.stopPropagation()}>
+                  <span className="scope-input-label">Seu CPF (apenas números)</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    className="setting-input"
+                    placeholder="Ex: 00652162614"
+                    value={onboardingCpf}
+                    onChange={(e) =>
+                      setOnboardingCpf(e.target.value.replace(/\D/g, '').slice(0, 11))
+                    }
+                  />
+                  <span className="setting-hint">
+                    Usado para reconhecer seus processos. Se não souber agora, o SEI identificará
+                    automaticamente ao abrir.
+                  </span>
+                </div>
+              )}
+            </label>
+
+            {/* Opção 2: Todos os processos da unidade */}
+            <label className={`scope-card ${onboardingEscopo === 'unidade' ? 'active' : ''}`}>
+              <input
+                type="radio"
+                name="onboarding-escopo"
+                className="scope-card-input"
+                checked={onboardingEscopo === 'unidade'}
+                onChange={() => setOnboardingEscopo('unidade')}
+              />
+              <div className="scope-card-header">
+                <span className="scope-card-icon">
+                  <Inbox size={16} />
+                </span>
+                <div className="scope-card-info">
+                  <span className="scope-title">Todos os processos da unidade</span>
+                  <p className="scope-desc">
+                    Monitore toda a caixa de entrada da unidade, recebendo visibilidade completa.
+                  </p>
+                </div>
+                <div className="scope-card-radio">
+                  <div className={`radio-dot ${onboardingEscopo === 'unidade' ? 'checked' : ''}`} />
+                </div>
+              </div>
+            </label>
+
+            {/* Opção 3: Com etiquetas da unidade */}
+            <label className={`scope-card ${onboardingEscopo === 'marcadores' ? 'active' : ''}`}>
+              <input
+                type="radio"
+                name="onboarding-escopo"
+                className="scope-card-input"
+                checked={onboardingEscopo === 'marcadores'}
+                onChange={() => setOnboardingEscopo('marcadores')}
+              />
+              <div className="scope-card-header">
+                <span className="scope-card-icon">
+                  <Tag size={16} />
+                </span>
+                <div className="scope-card-info">
+                  <span className="scope-title">Processos com etiquetas da unidade</span>
+                  <p className="scope-desc">
+                    Filtre apenas os processos que contenham etiquetas de seu interesse.
+                  </p>
+                </div>
+                <div className="scope-card-radio">
+                  <div className={`radio-dot ${onboardingEscopo === 'marcadores' ? 'checked' : ''}`} />
+                </div>
+              </div>
+
+              {onboardingEscopo === 'marcadores' && (
+                <div className="scope-card-expanded" onClick={(e) => e.stopPropagation()}>
+                  <span className="scope-input-label">Selecione as etiquetas da sua unidade:</span>
+                  {todosMarcadores.length === 0 ? (
+                    <div className="empty-markers-tip">
+                      <p>Nenhuma etiqueta foi extraída do SEI ainda.</p>
+                      <button
+                        type="button"
+                        className="btn-open-sei-inline"
+                        onClick={() => handleAbrirSei()}
+                      >
+                        <ExternalLink size={12} />
+                        Abrir SEI para carregar etiquetas
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="markers-selection-wrap">
+                      {todosMarcadores.map((m) => {
+                        const selecionado = onboardingMarcadores.some(
+                          (x) => x.toLowerCase().trim() === m.toLowerCase().trim()
+                        );
+                        return (
+                          <button
+                            key={m}
+                            type="button"
+                            className={`marker-select-chip ${selecionado ? 'selected' : ''}`}
+                            onClick={() => alternarMarcadorOnboarding(m)}
+                          >
+                            <Tag size={10} />
+                            {m}
+                            {selecionado && <Check size={10} style={{ marginLeft: 2 }} />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </label>
+          </div>
+        </div>
+
+        <footer className="onboarding-footer">
+          <p className="onboarding-preview">
+            Você vai acompanhar: <strong>{previaEscopo}</strong>
+          </p>
+
+          <button
+            className="btn-primary-full btn-cta"
+            onClick={handleConcluirOnboarding}
+            disabled={carregando || onboardingSemEtiquetas}
+            title={onboardingSemEtiquetas ? 'Selecione ao menos uma etiqueta' : undefined}
+          >
+            Ativar radar
+            <ArrowRight size={14} />
+          </button>
+
+          <button
+            type="button"
+            className="btn-skip-onboarding"
+            onClick={handleConfigurarDepois}
+            disabled={carregando}
+          >
+            Configurar depois
+          </button>
+
+          <p className="onboarding-privacy-note">
+            <ShieldCheck size={13} />
+            Tudo fica no seu navegador. Nada é alterado no SEI para outras pessoas.
+          </p>
+        </footer>
+      </div>
+    );
+  }
 
   return (
     <div className="popup-container">
@@ -410,6 +729,34 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
         </div>
       </div>
 
+      {/* Barra de Escopo do Radar */}
+      {config && !exibindoConfig && (
+        <div className="radar-scope-bar">
+          <div className="radar-scope-info">
+            <Target size={13} className="radar-icon" />
+            <span className="radar-scope-label">Radar:</span>
+            <span className="radar-scope-desc">{descreverEscopoRadar(config)}</span>
+          </div>
+          <div className="radar-scope-actions">
+            <button
+              className={`btn-clear-scope ${confirmandoLimpeza ? 'confirmando' : ''}`}
+              onClick={handleLimparProcessos}
+              title="Remover todos os processos já sincronizados"
+            >
+              <Trash2 size={11} />
+              {confirmandoLimpeza ? 'Confirmar?' : 'Limpar'}
+            </button>
+            <button
+              className="btn-change-scope"
+              onClick={() => setExibindoConfig(true)}
+              title="Alterar escopo do radar"
+            >
+              Alterar
+            </button>
+          </div>
+        </div>
+      )}
+
       {!exibindoConfig && (
         <div className="summary-bar">
           <Sun size={12} />
@@ -448,142 +795,229 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       {exibindoConfig && config ? (
         /* Tela de Configurações */
         <div className="settings-view">
-          <div className="setting-group">
-            <label className="setting-label">Usuário no SEI</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              className="setting-input"
-              value={config.usuarioSigla}
-              onChange={(e) =>
-                setConfig({ ...config, usuarioSigla: e.target.value.replace(/\D/g, '').slice(0, 11) })
-              }
-              placeholder="Ex: 00652162614"
-            />
-            <span className="setting-hint">
-              Seu CPF, apenas números — usado para filtrar os processos atribuídos a você. Se deixar em
-              branco, tentará capturar automaticamente do SEI.
-            </span>
-          </div>
-
-          <div className="setting-group">
-            <label className="setting-label">Regra de Notificações</label>
-            <select
-              className="setting-select"
-              value={config.regraNotificacao}
-              onChange={(e) =>
-                setConfig({ ...config, regraNotificacao: e.target.value as RegraNotificacao })
-              }
-            >
-              <option value="todos">Todos os novos processos recebidos</option>
-              <option value="atribuidos">Apenas novos processos atribuídos a mim</option>
-              <option value="atribuidos_e_marcadores">
-                Atribuídos a mim OU com marcadores selecionados
-              </option>
-            </select>
-          </div>
-
-          {config.regraNotificacao === 'atribuidos_e_marcadores' && (
-            <div className="setting-group">
-              <label className="setting-label">Marcadores para Notificar</label>
-              <div className="markers-selection-wrap">
-                {todosMarcadores.map((m) => {
-                  const selecionado = (config.marcadoresNotificacao || []).includes(m);
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      className={`marker-select-chip ${selecionado ? 'selected' : ''}`}
-                      onClick={() => alternarMarcadorNotificacao(m)}
-                    >
-                      <Tag size={10} />
-                      {m}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="add-marker-row">
-                <input
-                  type="text"
-                  className="setting-input"
-                  value={novoMarcadorInput}
-                  onChange={(e) => setNovoMarcadorInput(e.target.value)}
-                  placeholder="Digitar outro marcador..."
-                  onKeyDown={(e) => e.key === 'Enter' && adicionarMarcadorPersonalizado()}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary btn-compact"
-                  onClick={adicionarMarcadorPersonalizado}
-                >
-                  Adicionar
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="setting-group">
-            <label className="setting-label">URL de Controle do SEI</label>
-            <input
-              type="text"
-              className="setting-input"
-              value={config.urlControle}
-              onChange={(e) => setConfig({ ...config, urlControle: e.target.value })}
-              placeholder="https://www.sei.mg.gov.br/sei/controlador.php?acao=procedimento_controlar"
-            />
-          </div>
-
-          <div className="setting-group">
-            <label className="setting-label">Intervalo de Verificação Automática</label>
-            <select
-              className="setting-select"
-              value={config.intervaloMinutos}
-              onChange={(e) => setConfig({ ...config, intervaloMinutos: Number(e.target.value) })}
-            >
-              <option value={1}>A cada 1 minuto</option>
-              <option value={2}>A cada 2 minutos</option>
-              <option value={5}>A cada 5 minutos (Recomendado)</option>
-              <option value={10}>A cada 10 minutos</option>
-              <option value={15}>A cada 15 minutos</option>
-            </select>
-          </div>
-
-          <div className="setting-toggle-row">
-            <div>
-              <div className="setting-label">Notificações no Sistema</div>
-              <div className="setting-toggle-desc">Avisar no canto da tela quando novos processos entrarem</div>
-            </div>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={config.notificacoesAtivas}
-                onChange={(e) => setConfig({ ...config, notificacoesAtivas: e.target.checked })}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-
-          <div className="setting-toggle-row">
-            <div>
-              <div className="setting-label">Radar Sonoro</div>
-              <div className="setting-toggle-desc">Emitir som discreto ao receber novo processo</div>
-            </div>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={config.somAtivo}
-                onChange={(e) => setConfig({ ...config, somAtivo: e.target.checked })}
-              />
-              <span className="slider" />
-            </label>
-          </div>
-
-          <button className="btn-secondary" onClick={handleTestarNotificacao}>
-            <Bell size={14} />
-            Testar Notificação de Exemplo
+          <button
+            type="button"
+            className="btn-voltar-inicio"
+            onClick={() => setExibindoConfig(false)}
+          >
+            <ArrowLeft size={14} />
+            Voltar para os processos
           </button>
 
-          <button className="btn-primary-full" onClick={handleSalvarConfig}>
+          {/* Seção 1: Radar Pessoal */}
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Target size={14} />
+              <span>Radar Pessoal</span>
+            </div>
+
+            <div className="setting-group">
+              <label className="setting-label">Escopo de Monitoramento</label>
+              <select
+                className="setting-select"
+                value={config.escopoRadar || 'atribuidos'}
+                onChange={(e) =>
+                  setConfig({ ...config, escopoRadar: e.target.value as EscopoRadar })
+                }
+              >
+                <option value="atribuidos">Apenas processos atribuídos a mim (Recomendada)</option>
+                <option value="unidade">Todos os processos da unidade</option>
+                <option value="marcadores">Apenas com etiquetas da unidade selecionadas</option>
+              </select>
+              <span className="setting-hint">
+                Define quais processos são monitorados, armazenados e exibidos na extensão.
+              </span>
+            </div>
+
+            {config.escopoRadar === 'atribuidos' && (
+              <div className="setting-group">
+                <label className="setting-label">Seu CPF no SEI</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="setting-input"
+                  value={config.usuarioSigla}
+                  onChange={(e) =>
+                    setConfig({
+                      ...config,
+                      usuarioSigla: e.target.value.replace(/\D/g, '').slice(0, 11),
+                    })
+                  }
+                  placeholder="Ex: 00652162614"
+                />
+                <span className="setting-hint">
+                  Apenas números. Se deixar em branco, tentará capturar automaticamente do SEI.
+                </span>
+              </div>
+            )}
+
+            {config.escopoRadar === 'marcadores' && (
+              <div className="setting-group">
+                <label className="setting-label">Etiquetas do Radar</label>
+                {todosMarcadores.length === 0 ? (
+                  <div className="empty-markers-tip">
+                    <p>Nenhuma etiqueta foi extraída do SEI ainda.</p>
+                    <button
+                      type="button"
+                      className="btn-open-sei-inline"
+                      onClick={() => handleAbrirSei()}
+                    >
+                      <ExternalLink size={12} />
+                      Abrir SEI para carregar etiquetas
+                    </button>
+                  </div>
+                ) : (
+                  <div className="markers-selection-wrap">
+                    {todosMarcadores.map((m) => {
+                      const selecionado = (config.marcadoresRadar || []).some(
+                        (x) => x.toLowerCase().trim() === m.toLowerCase().trim()
+                      );
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`marker-select-chip ${selecionado ? 'selected' : ''}`}
+                          onClick={() => alternarMarcadorRadar(m)}
+                        >
+                          <Tag size={10} />
+                          {m}
+                          {selecionado && <Check size={10} style={{ marginLeft: 2 }} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <span className="setting-hint">
+                  As etiquetas são obtidas diretamente do SEI (somente leitura).
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Seção 2: Notificações e Alertas */}
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <Bell size={14} />
+              <span>Notificações e Alertas</span>
+            </div>
+
+            <div className="setting-group">
+              <label className="setting-label">Regra de Notificações</label>
+              <select
+                className="setting-select"
+                value={config.regraNotificacao}
+                onChange={(e) =>
+                  setConfig({ ...config, regraNotificacao: e.target.value as RegraNotificacao })
+                }
+              >
+                <option value="todos">Todos os processos dentro do Radar</option>
+                <option value="atribuidos">Apenas novos processos atribuídos a mim</option>
+                <option value="atribuidos_e_marcadores">
+                  Atribuídos a mim OU com etiquetas específicas
+                </option>
+              </select>
+            </div>
+
+            {config.regraNotificacao === 'atribuidos_e_marcadores' && (
+              <div className="setting-group">
+                <label className="setting-label">Etiquetas para Notificar</label>
+                <div className="markers-selection-wrap">
+                  {todosMarcadores.map((m) => {
+                    const selecionado = (config.marcadoresNotificacao || []).some(
+                      (x) => x.toLowerCase().trim() === m.toLowerCase().trim()
+                    );
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        className={`marker-select-chip ${selecionado ? 'selected' : ''}`}
+                        onClick={() => alternarMarcadorNotificacao(m)}
+                      >
+                        <Tag size={10} />
+                        {m}
+                        {selecionado && <Check size={10} style={{ marginLeft: 2 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="setting-toggle-row">
+              <div>
+                <div className="setting-label">Notificações no Sistema</div>
+                <div className="setting-toggle-desc">
+                  Avisar no canto da tela quando novos processos entrarem no Radar
+                </div>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={config.notificacoesAtivas}
+                  onChange={(e) => setConfig({ ...config, notificacoesAtivas: e.target.checked })}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+
+            <div className="setting-toggle-row">
+              <div>
+                <div className="setting-label">Radar Sonoro</div>
+                <div className="setting-toggle-desc">
+                  Emitir som discreto ao receber novidades no Radar
+                </div>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={config.somAtivo}
+                  onChange={(e) => setConfig({ ...config, somAtivo: e.target.checked })}
+                />
+                <span className="slider" />
+              </label>
+            </div>
+
+            <button className="btn-secondary" onClick={handleTestarNotificacao}>
+              <Bell size={14} />
+              Testar Notificação de Exemplo
+            </button>
+          </div>
+
+          {/* Seção 3: Conexão e Sincronização */}
+          <div className="settings-section">
+            <div className="settings-section-title">
+              <SlidersHorizontal size={14} />
+              <span>Conexão e Intervalo</span>
+            </div>
+
+            <div className="setting-group">
+              <label className="setting-label">URL de Controle do SEI</label>
+              <input
+                type="text"
+                className="setting-input"
+                value={config.urlControle}
+                onChange={(e) => setConfig({ ...config, urlControle: e.target.value })}
+                placeholder="https://www.sei.mg.gov.br/sei/controlador.php?acao=procedimento_controlar"
+              />
+            </div>
+
+            <div className="setting-group">
+              <label className="setting-label">Intervalo de Verificação Automática</label>
+              <select
+                className="setting-select"
+                value={config.intervaloMinutos}
+                onChange={(e) => setConfig({ ...config, intervaloMinutos: Number(e.target.value) })}
+              >
+                <option value={1}>A cada 1 minuto</option>
+                <option value={2}>A cada 2 minutos</option>
+                <option value={5}>A cada 5 minutos (Recomendado)</option>
+                <option value={10}>A cada 10 minutos</option>
+                <option value={15}>A cada 15 minutos</option>
+              </select>
+            </div>
+          </div>
+
+          <button className="btn-primary-full" onClick={() => handleSalvarConfig()}>
             {mensagemAviso || 'Salvar Configurações'}
           </button>
         </div>
@@ -596,7 +1030,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
               <input
                 type="text"
                 className="search-input"
-                placeholder="Buscar por número, assunto, marcador..."
+                placeholder="Buscar no Radar por número, assunto, marcador..."
                 value={termoBusca}
                 onChange={(e) => setTermoBusca(e.target.value)}
               />
@@ -651,10 +1085,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                   className={`marker-chip ${marcadorFiltro === null ? 'active' : ''}`}
                   onClick={() => setMarcadorFiltro(null)}
                 >
-                  Todos Marcadores
+                  Todas Etiquetas
                 </button>
                 {todosMarcadores.map((marcador) => {
-                  const ativo = marcadorFiltro === marcador;
+                  const ativo =
+                    marcadorFiltro?.trim().toLowerCase() === marcador.trim().toLowerCase();
                   return (
                     <button
                       key={marcador}
@@ -677,10 +1112,13 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                 {processos.length === 0 ? (
                   <>
                     <FileText size={36} color="var(--cor-texto-fraco)" />
-                    <p>Nenhum processo carregado ainda</p>
+                    <p>Nenhum processo no seu Radar</p>
                     <span>
-                      Sincronize para trazer os processos que já estão no SEI. Isso não dispara
-                      notificações — é só a carga inicial.
+                      {config?.escopoRadar === 'atribuidos'
+                        ? 'Não há processos atribuídos ao seu CPF no momento.'
+                        : config?.escopoRadar === 'marcadores'
+                        ? 'Não há processos com as etiquetas selecionadas.'
+                        : 'Sincronize para trazer os processos do SEI para o Radar.'}
                     </span>
                     <button
                       type="button"
@@ -743,7 +1181,9 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                             Atualizado
                           </span>
                         )}
-                        {!proc.lido && !proc.motivoAtualizacao && <span className="badge-new">Novo</span>}
+                        {!proc.lido && !proc.motivoAtualizacao && (
+                          <span className="badge-new">Novo</span>
+                        )}
                       </div>
                     </div>
 
@@ -755,21 +1195,31 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                       <div className="card-markers-row">
                         {proc.marcadores.map((m) => {
                           const expandido =
-                            marcadorExpandido?.numero === proc.numero && marcadorExpandido?.nome === m.nome;
+                            marcadorExpandido?.numero === proc.numero &&
+                            marcadorExpandido?.nome === m.nome;
                           return (
                             <button
                               key={m.nome}
                               type="button"
-                              className={`card-marker-badge ${m.texto ? 'has-text' : ''} ${expandido ? 'expanded' : ''}`}
+                              className={`card-marker-badge ${m.texto ? 'has-text' : ''} ${
+                                expandido ? 'expanded' : ''
+                              }`}
                               title={m.texto || m.nome}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!m.texto) return;
-                                setMarcadorExpandido(expandido ? null : { numero: proc.numero, nome: m.nome });
+                                setMarcadorExpandido(
+                                  expandido ? null : { numero: proc.numero, nome: m.nome }
+                                );
                               }}
                             >
                               {m.nome}
-                              {m.texto && (expandido ? <ChevronUp size={9} style={{ marginLeft: 2 }} /> : <ChevronDown size={9} style={{ marginLeft: 2 }} />)}
+                              {m.texto &&
+                                (expandido ? (
+                                  <ChevronUp size={9} style={{ marginLeft: 2 }} />
+                                ) : (
+                                  <ChevronDown size={9} style={{ marginLeft: 2 }} />
+                                ))}
                             </button>
                           );
                         })}
