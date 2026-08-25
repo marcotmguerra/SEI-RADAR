@@ -6,7 +6,13 @@ import {
   salvarStatusSessao,
   salvarConfiguracao,
 } from '../shared/storage';
-import type { ConfiguracaoExtensao, MensagemRuntime, ProcessoSei, StatusSessao } from '../types';
+import type {
+  ConfiguracaoExtensao,
+  DetalheMarcador,
+  MensagemRuntime,
+  ProcessoSei,
+  StatusSessao,
+} from '../types';
 
 const NOME_ALARME = 'sei_alarme_verificacao';
 
@@ -39,6 +45,47 @@ const atualizarBadge = async (processos: ProcessoSei[], status: StatusSessao = '
     text: naoLidos > 0 ? (naoLidos > 99 ? '99+' : String(naoLidos)) : '',
   });
   await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
+};
+
+const CAMINHO_OFFSCREEN = 'offscreen.html';
+
+/**
+ * Garante que o documento offscreen (necessário para tocar áudio a partir do
+ * service worker, que não tem acesso a APIs de DOM) esteja aberto
+ */
+const garantirDocumentoOffscreen = async (): Promise<boolean> => {
+  if (typeof chrome === 'undefined' || !chrome.offscreen) return false;
+
+  try {
+    const jaExiste = await chrome.offscreen.hasDocument();
+    if (jaExiste) return true;
+
+    await chrome.offscreen.createDocument({
+      url: CAMINHO_OFFSCREEN,
+      reasons: [chrome.offscreen.Reason.AUDIO_PLAYBACK],
+      justification: 'Tocar alerta sonoro ao detectar novo processo ou marcador atualizado no SEI',
+    });
+    return true;
+  } catch (erro) {
+    console.error('Erro ao criar documento offscreen para áudio:', erro);
+    return false;
+  }
+};
+
+/**
+ * Toca o alerta sonoro via documento offscreen. O campo "silent" das notificações
+ * nativas do Chrome depende do daemon de notificação do SO (frequentemente mudo
+ * em Linux), então o som real é gerado aqui via Web Audio API.
+ */
+const tocarAlertaSonoro = async (): Promise<void> => {
+  const disponivel = await garantirDocumentoOffscreen();
+  if (!disponivel) return;
+
+  try {
+    await chrome.runtime.sendMessage({ tipo: 'TOCAR_ALERTA_SONORO' });
+  } catch (erro) {
+    console.error('Erro ao solicitar reprodução do alerta sonoro:', erro);
+  }
 };
 
 /**
@@ -88,6 +135,7 @@ const notificarDesconexaoOuInstabilidade = async (
       priority: 2,
       silent: !config.somAtivo,
     });
+    if (config.somAtivo) await tocarAlertaSonoro();
   } catch (erro) {
     console.error('Erro ao notificar desconexão/instabilidade:', erro);
   }
@@ -120,7 +168,7 @@ export const deveNotificarProcesso = (processo: ProcessoSei, config: Configuraca
     if (Array.isArray(processo.marcadores) && Array.isArray(config.marcadoresNotificacao)) {
       const marcadoresInteresse = config.marcadoresNotificacao.map((m) => m.toLowerCase().trim());
       const temMarcador = processo.marcadores.some((m) =>
-        marcadoresInteresse.includes(m.toLowerCase().trim())
+        marcadoresInteresse.includes(m.nome.toLowerCase().trim())
       );
       if (temMarcador) return true;
     }
@@ -144,7 +192,7 @@ const notificarNovoProcesso = async (processo: ProcessoSei, somAtivo: boolean) =
     tags.push(`👤 ${processo.atribuidoPara}`);
   }
   if (processo.marcadores && processo.marcadores.length > 0) {
-    tags.push(`🏷️ ${processo.marcadores.join(', ')}`);
+    tags.push(`🏷️ ${processo.marcadores.map((m) => m.nome).join(', ')}`);
   }
 
   let mensagem = processo.assunto
@@ -164,8 +212,65 @@ const notificarNovoProcesso = async (processo: ProcessoSei, somAtivo: boolean) =
       priority: 2,
       silent: !somAtivo,
     });
+    if (somAtivo) await tocarAlertaSonoro();
   } catch (erro) {
     console.error('Erro ao criar notificação:', erro);
+  }
+};
+
+/**
+ * Compara os marcadores previamente salvos com os coletados na verificação atual
+ * e retorna os marcadores novos ou com texto de observação/despacho alterado.
+ * Ignora coletas vazias para evitar falso positivo quando o parsing de tooltip
+ * falha momentaneamente e a página não retorna nenhum marcador.
+ */
+const detectarMarcadoresAlterados = (
+  existentes: DetalheMarcador[] | undefined,
+  coletados: DetalheMarcador[] | undefined
+): DetalheMarcador[] => {
+  if (!coletados || coletados.length === 0) return [];
+
+  const mapaExistentes = new Map((existentes || []).map((m) => [m.nome, m]));
+  const alterados: DetalheMarcador[] = [];
+
+  for (const marcador of coletados) {
+    const anterior = mapaExistentes.get(marcador.nome);
+    if (!anterior || anterior.texto !== marcador.texto) {
+      alterados.push(marcador);
+    }
+  }
+
+  return alterados;
+};
+
+/**
+ * Dispara notificação nativa quando um processo já conhecido ganha marcador novo ou alterado
+ */
+const notificarMarcadorAtualizado = async (
+  processo: ProcessoSei,
+  marcadoresAlterados: DetalheMarcador[],
+  somAtivo: boolean
+) => {
+  if (typeof chrome === 'undefined' || !chrome.notifications) return;
+
+  const idNotificacao = `sei_marcador_${processo.numero}_${Date.now()}`;
+  linksNotificacoes.set(idNotificacao, processo.link);
+
+  const nomes = marcadoresAlterados.map((m) => m.nome).join(', ');
+  const mensagem = processo.assunto ? `🏷️ ${nomes}\n${processo.assunto}` : `🏷️ ${nomes}`;
+
+  try {
+    await chrome.notifications.create(idNotificacao, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+      title: `Marcador Atualizado: ${processo.numero}`,
+      message: mensagem,
+      priority: 2,
+      silent: !somAtivo,
+    });
+    if (somAtivo) await tocarAlertaSonoro();
+  } catch (erro) {
+    console.error('Erro ao criar notificação de marcador atualizado:', erro);
   }
 };
 
@@ -176,8 +281,10 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
   const config = await obterConfiguracao();
   const processosArmazenados = await obterProcessos();
   const mapaArmazenados = new Map(processosArmazenados.map((p) => [p.numero, p]));
+  const agora = new Date().toISOString();
 
   const novosProcessos: ProcessoSei[] = [];
+  const processosComMarcadorAtualizado: { processo: ProcessoSei; alterados: DetalheMarcador[] }[] = [];
   const listaAtualizada: ProcessoSei[] = [];
 
   for (const coletado of processosColetados) {
@@ -185,18 +292,31 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
     if (!existente) {
       novosProcessos.push(coletado);
       listaAtualizada.push(coletado);
-    } else {
-      listaAtualizada.push({
-        ...coletado,
-        detectadoEm: existente.detectadoEm,
-        lido: existente.lido,
-        assunto: coletado.assunto || existente.assunto,
-        atribuidoPara: coletado.atribuidoPara || existente.atribuidoPara,
-        marcadores:
-          coletado.marcadores && coletado.marcadores.length > 0
-            ? coletado.marcadores
-            : existente.marcadores,
-      });
+      continue;
+    }
+
+    const marcadoresAlterados = detectarMarcadoresAlterados(existente.marcadores, coletado.marcadores);
+    const marcadoresFinais =
+      coletado.marcadores && coletado.marcadores.length > 0
+        ? coletado.marcadores
+        : existente.marcadores;
+
+    const processoAtualizado: ProcessoSei = {
+      ...coletado,
+      detectadoEm: existente.detectadoEm,
+      lido: marcadoresAlterados.length > 0 ? false : existente.lido,
+      assunto: coletado.assunto || existente.assunto,
+      atribuidoPara: coletado.atribuidoPara || existente.atribuidoPara,
+      marcadores: marcadoresFinais,
+      ...(marcadoresAlterados.length > 0
+        ? { atualizadoEm: agora, motivoAtualizacao: 'Marcador alterado' }
+        : {}),
+    };
+
+    listaAtualizada.push(processoAtualizado);
+
+    if (marcadoresAlterados.length > 0) {
+      processosComMarcadorAtualizado.push({ processo: processoAtualizado, alterados: marcadoresAlterados });
     }
   }
 
@@ -218,6 +338,12 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
     await salvarConfiguracao({ primeiraCargaRealizada: true });
     // Na primeira carga histórica, NÃO dispara notificações desktop ("Os SEIs que já estavam não sobem")
     return { novos: 0, total: listaAtualizada.length };
+  }
+
+  if (config.notificacoesAtivas && processosComMarcadorAtualizado.length > 0) {
+    for (const { processo, alterados } of processosComMarcadorAtualizado) {
+      await notificarMarcadorAtualizado(processo, alterados, config.somAtivo);
+    }
   }
 
   if (config.notificacoesAtivas && novosProcessos.length > 0) {
@@ -443,7 +569,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
               detectadoEm: new Date().toISOString(),
               lido: false,
               atribuidoPara: config.usuarioSigla || 'MG123456',
-              marcadores: ['Urgente', 'Manutenção'],
+              marcadores: [{ nome: 'Urgente' }, { nome: 'Manutenção' }],
             },
             config.somAtivo
           );
@@ -474,6 +600,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
             await processarNovosProcessos(mensagem.processos || []);
             await salvarStatusSessao('conectado');
           }
+          sendResponse({ ok: true });
+          break;
+        }
+        case 'TOCAR_ALERTA_SONORO': {
+          // Tratada pelo documento offscreen; o service worker pode receber o eco da própria mensagem
           sendResponse({ ok: true });
           break;
         }

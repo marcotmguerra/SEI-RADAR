@@ -1,3 +1,8 @@
+export interface DetalheMarcador {
+  nome: string;
+  texto?: string;
+}
+
 export interface ProcessoSei {
   numero: string;
   assunto: string | null;
@@ -6,7 +11,9 @@ export interface ProcessoSei {
   lido: boolean;
   unidade?: string;
   atribuidoPara?: string | null;
-  marcadores?: string[];
+  marcadores?: DetalheMarcador[];
+  atualizadoEm?: string; // ISO 8601 string, presente quando o processo teve marcadores alterados após a primeira detecção
+  motivoAtualizacao?: string;
 }
 
 export type RegraNotificacao = 'todos' | 'atribuidos' | 'atribuidos_e_marcadores';
@@ -57,4 +64,5 @@ export type MensagemRuntime =
       autenticado?: boolean;
       usuarioLogado?: string;
     }
-  | { tipo: 'TESTAR_NOTIFICACAO' };
+  | { tipo: 'TESTAR_NOTIFICACAO' }
+  | { tipo: 'TOCAR_ALERTA_SONORO' };

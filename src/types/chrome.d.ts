@@ -104,6 +104,49 @@ declare namespace chrome {
     };
   }
 
+  export namespace offscreen {
+    export enum Reason {
+      AUDIO_PLAYBACK = 'AUDIO_PLAYBACK',
+    }
+
+    export interface CreateDocumentOptions {
+      url: string;
+      reasons: Reason[];
+      justification: string;
+    }
+
+    export function createDocument(options: CreateDocumentOptions): Promise<void>;
+    export function closeDocument(): Promise<void>;
+    export function hasDocument(): Promise<boolean>;
+  }
+
+  export namespace sidePanel {
+    export interface PanelOptions {
+      tabId?: number;
+      path?: string;
+      enabled?: boolean;
+    }
+
+    export interface GetPanelOptions {
+      tabId?: number;
+    }
+
+    export interface PanelBehavior {
+      openPanelOnActionClick?: boolean;
+    }
+
+    export interface OpenOptions {
+      tabId?: number;
+      windowId?: number;
+    }
+
+    export function open(options: OpenOptions): Promise<void>;
+    export function setOptions(options: PanelOptions): Promise<void>;
+    export function getOptions(options: GetPanelOptions): Promise<PanelOptions>;
+    export function setPanelBehavior(behavior: PanelBehavior): Promise<void>;
+    export function getPanelBehavior(): Promise<PanelBehavior>;
+  }
+
   export namespace tabs {
     export interface Tab {
       id?: number;

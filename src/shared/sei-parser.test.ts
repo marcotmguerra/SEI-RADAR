@@ -68,8 +68,9 @@ describe('SEI Parser', () => {
       `, 'text/html');
       const tr = doc.querySelector('tr')!;
       const marcadores = extrairMarcadoresDaLinha(tr);
-      expect(marcadores).toContain('Urgente / Prazo 24h');
-      expect(marcadores).toContain('Em Análise');
+      const nomes = marcadores.map((m) => m.nome);
+      expect(nomes).toContain('Urgente / Prazo 24h');
+      expect(nomes).toContain('Em Análise');
     });
 
     it('extrai marcadores com tooltip infraTooltipMostrar com 2 argumentos', () => {
@@ -92,8 +93,15 @@ describe('SEI Parser', () => {
       `, 'text/html');
       const tr = doc.querySelector('tr')!;
       const marcadores = extrairMarcadoresDaLinha(tr);
-      expect(marcadores).toContain('Prioridade Alta');
-      expect(marcadores).toContain('Análise Jurídica');
+      const nomes = marcadores.map((m) => m.nome);
+      expect(nomes).toContain('Prioridade Alta');
+      expect(nomes).toContain('Análise Jurídica');
+
+      const jurídica = marcadores.find((m) => m.nome === 'Análise Jurídica');
+      expect(jurídica?.texto).toBe('Aguardando parecer da assessoria');
+
+      const prioridade = marcadores.find((m) => m.nome === 'Prioridade Alta');
+      expect(prioridade?.texto).toBeUndefined();
     });
 
     it('limpa metadados de data e usuário em tooltips de marcadores', () => {
@@ -112,7 +120,7 @@ describe('SEI Parser', () => {
       `, 'text/html');
       const tr = doc.querySelector('tr')!;
       const marcadores = extrairMarcadoresDaLinha(tr);
-      expect(marcadores).toEqual(['Gabinete do Secretário']);
+      expect(marcadores).toEqual([{ nome: 'Gabinete do Secretário' }]);
     });
   });
 
@@ -178,7 +186,7 @@ describe('SEI Parser', () => {
       expect(processos[0]?.assunto).toBe('Manutenção de viatura operacional');
       expect(processos[0]?.link).toBe('https://www.sei.mg.gov.br/sei/controlador.php?acao=procedimento_trabalhar&id_procedimento=1001');
       expect(processos[0]?.atribuidoPara).toBe('MARCO.GUERRA');
-      expect(processos[0]?.marcadores).toEqual(['Urgente']);
+      expect(processos[0]?.marcadores).toEqual([{ nome: 'Urgente' }]);
 
       expect(processos[1]?.numero).toBe('1400.01.000098/2026-43');
       expect(processos[1]?.assunto).toBe('Aquisição de EPI');

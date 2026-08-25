@@ -13,6 +13,13 @@ import {
   User,
   Tag,
   X,
+  Sun,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  AlertTriangle,
+  BellOff,
+  PanelRight,
 } from 'lucide-react';
 import {
   obterConfiguracao,
@@ -22,6 +29,7 @@ import {
   marcarTodosProcessosComoLidos,
   salvarConfiguracao,
 } from '../shared/storage';
+import { suportaPainelLateral } from '../shared/painel-lateral';
 import type { ConfiguracaoExtensao, ProcessoSei, StatusSessao, RegraNotificacao } from '../types';
 
 const formatarHora = (dataIso: string): string => {
@@ -39,14 +47,47 @@ const formatarHora = (dataIso: string): string => {
   }
 };
 
+// Normaliza para dígitos quando o valor parece um CPF (11+ dígitos), senão compara como texto simples
+const normalizarParaComparacao = (valor: string): string => {
+  const digitos = valor.replace(/\D/g, '');
+  return digitos.length >= 11 ? digitos : valor.trim().toLowerCase();
+};
+
 const ehMeuProcesso = (proc: ProcessoSei, sigla?: string): boolean => {
   if (!sigla || !sigla.trim() || !proc.atribuidoPara) return false;
-  const s = sigla.trim().toLowerCase();
-  const a = proc.atribuidoPara.trim().toLowerCase();
+  const s = normalizarParaComparacao(sigla);
+  const a = normalizarParaComparacao(proc.atribuidoPara);
   return a.includes(s) || s.includes(a);
 };
 
-export const PopupApp: React.FC = () => {
+type PeriodoFiltro = 'todos' | 'hoje' | 'ontem';
+
+const ehMesmoDiaCalendario = (dataIso: string, referencia: Date): boolean => {
+  try {
+    const data = new Date(dataIso);
+    return (
+      data.getFullYear() === referencia.getFullYear() &&
+      data.getMonth() === referencia.getMonth() &&
+      data.getDate() === referencia.getDate()
+    );
+  } catch {
+    return false;
+  }
+};
+
+const ehHoje = (dataIso: string): boolean => ehMesmoDiaCalendario(dataIso, new Date());
+
+const ehOntem = (dataIso: string): boolean => {
+  const ontem = new Date();
+  ontem.setDate(ontem.getDate() - 1);
+  return ehMesmoDiaCalendario(dataIso, ontem);
+};
+
+interface PopupAppProps {
+  modoLateral?: boolean;
+}
+
+export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const [processos, setProcessos] = useState<ProcessoSei[]>([]);
   const [config, setConfig] = useState<ConfiguracaoExtensao | null>(null);
   const [status, setStatus] = useState<StatusSessao>('verificando');
@@ -54,10 +95,13 @@ export const PopupApp: React.FC = () => {
   const [carregando, setCarregando] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'meus' | 'nao_lidos'>('todos');
+  const [periodoFiltro, setPeriodoFiltro] = useState<PeriodoFiltro>('todos');
   const [marcadorFiltro, setMarcadorFiltro] = useState<string | null>(null);
+  const [marcadorExpandido, setMarcadorExpandido] = useState<{ numero: string; nome: string } | null>(null);
   const [novoMarcadorInput, setNovoMarcadorInput] = useState('');
   const [exibindoConfig, setExibindoConfig] = useState(false);
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
+  const [idJanelaAtual, setIdJanelaAtual] = useState<number | null>(null);
 
   // Carrega dados iniciais e dispara checagem rápida
   const carregarDados = async () => {
@@ -86,9 +130,27 @@ export const PopupApp: React.FC = () => {
     }
   }, []);
 
-  // Dispara verificação manual imediata
+  // Pré-carrega o windowId no mount para que o clique em "Abrir na lateral" possa
+  // chamar chrome.sidePanel.open() de forma síncrona (a API exige gesto do usuário,
+  // que não sobrevive de forma confiável a um await intermediário)
+  useEffect(() => {
+    if (modoLateral || !suportaPainelLateral()) return;
+
+    chrome.tabs
+      .query({ active: true, currentWindow: true })
+      .then((abas) => {
+        const id = abas[0]?.windowId;
+        if (typeof id === 'number') setIdJanelaAtual(id);
+      })
+      .catch(() => {
+        // Sem windowId, o botão de painel lateral fica desabilitado
+      });
+  }, [modoLateral]);
+
+  // Dispara verificação manual imediata (duração mínima para o spinner ficar perceptível)
   const handleVerificarAgora = async () => {
     setCarregando(true);
+    const inicio = Date.now();
     try {
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         await chrome.runtime.sendMessage({ tipo: 'VERIFICAR_AGORA' });
@@ -97,6 +159,10 @@ export const PopupApp: React.FC = () => {
     } catch (erro) {
       console.error('Erro na verificação manual:', erro);
     } finally {
+      const restante = 600 - (Date.now() - inicio);
+      if (restante > 0) {
+        await new Promise((resolve) => setTimeout(resolve, restante));
+      }
       setCarregando(false);
     }
   };
@@ -147,13 +213,43 @@ export const PopupApp: React.FC = () => {
     }
   };
 
+  // Abre o painel lateral. NÃO transformar em async: chrome.sidePanel.open() exige
+  // gesto do usuário e nenhum await pode precedê-lo, ou a chamada falha silenciosamente.
+  const handleAbrirNaLateral = () => {
+    if (!suportaPainelLateral() || idJanelaAtual === null) return;
+
+    chrome.sidePanel
+      .open({ windowId: idJanelaAtual })
+      .then(() => {
+        window.close();
+      })
+      .catch((erro: unknown) => {
+        console.error('Falha ao abrir o painel lateral:', erro);
+        setMensagemAviso('Não foi possível abrir o painel lateral.');
+      });
+  };
+
+  // Alterna o alerta sonoro direto pelo cabeçalho (atualização otimista, sem precisar abrir Configurações)
+  const handleAlternarSom = async () => {
+    if (!config) return;
+    const somAtivo = !config.somAtivo;
+    setConfig({ ...config, somAtivo });
+    await salvarConfiguracao({ somAtivo });
+    if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+      await chrome.runtime.sendMessage({
+        tipo: 'SALVAR_CONFIGURACAO',
+        configuracao: { somAtivo },
+      });
+    }
+  };
+
   // Todos os marcadores únicos detectados na base
   const todosMarcadores = useMemo(() => {
     const set = new Set<string>();
     for (const proc of processos) {
       if (proc.marcadores) {
         for (const m of proc.marcadores) {
-          if (m && m.trim()) set.add(m.trim());
+          if (m.nome && m.nome.trim()) set.add(m.nome.trim());
         }
       }
     }
@@ -174,6 +270,15 @@ export const PopupApp: React.FC = () => {
     return processos.filter((p) => !p.lido).length;
   }, [processos]);
 
+  // Resumo do expediente: novidades de hoje e quantas são atribuídas a mim
+  const resumoHoje = useMemo(() => {
+    const doDia = processos.filter((p) => ehHoje(p.detectadoEm));
+    return {
+      novos: doDia.length,
+      meus: doDia.filter((p) => ehMeuProcesso(p, config?.usuarioSigla)).length,
+    };
+  }, [processos, config?.usuarioSigla]);
+
   // Filtra e ordena processos
   const processosFiltrados = useMemo(() => {
     return processos
@@ -182,9 +287,13 @@ export const PopupApp: React.FC = () => {
         if (filtroTipo === 'nao_lidos' && p.lido) return false;
         if (filtroTipo === 'meus' && !ehMeuProcesso(p, config?.usuarioSigla)) return false;
 
+        // Filtro de período
+        if (periodoFiltro === 'hoje' && !ehHoje(p.detectadoEm)) return false;
+        if (periodoFiltro === 'ontem' && !ehOntem(p.detectadoEm)) return false;
+
         // Filtro de Marcador
         if (marcadorFiltro) {
-          if (!p.marcadores || !p.marcadores.includes(marcadorFiltro)) return false;
+          if (!p.marcadores || !p.marcadores.some((m) => m.nome === marcadorFiltro)) return false;
         }
 
         // Filtro de busca textual
@@ -193,7 +302,10 @@ export const PopupApp: React.FC = () => {
         const num = p.numero.toLowerCase();
         const assunto = (p.assunto || '').toLowerCase();
         const atribuicao = (p.atribuidoPara || '').toLowerCase();
-        const marcadoresTexto = (p.marcadores || []).join(' ').toLowerCase();
+        const marcadoresTexto = (p.marcadores || [])
+          .map((m) => `${m.nome} ${m.texto || ''}`)
+          .join(' ')
+          .toLowerCase();
 
         return (
           num.includes(termo) ||
@@ -203,7 +315,7 @@ export const PopupApp: React.FC = () => {
         );
       })
       .sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime());
-  }, [processos, filtroTipo, marcadorFiltro, termoBusca, config?.usuarioSigla]);
+  }, [processos, filtroTipo, periodoFiltro, marcadorFiltro, termoBusca, config?.usuarioSigla]);
 
   const alternarMarcadorNotificacao = (marcador: string) => {
     if (!config) return;
@@ -228,8 +340,8 @@ export const PopupApp: React.FC = () => {
       {/* Cabeçalho */}
       <header className="header">
         <div className="header-title-row">
-          <span className="logo-badge">SEI</span>
-          <h1 className="title">Monitor</h1>
+          <span className="logo-badge">SEI!</span>
+          <h1 className="title">Alerta</h1>
         </div>
 
         <div className="header-actions">
@@ -242,17 +354,41 @@ export const PopupApp: React.FC = () => {
             Abrir SEI
           </button>
           <button
-            className={`btn-icon ${carregando ? 'spin' : ''}`}
+            className="btn-icon"
             onClick={handleVerificarAgora}
             disabled={carregando}
             title="Verificar agora"
+            aria-label="Verificar processos agora"
           >
-            <RefreshCw size={15} />
+            <RefreshCw size={15} className={carregando ? 'spin' : ''} />
           </button>
+          {config && (
+            <button
+              className={`btn-icon ${config.somAtivo ? 'active' : ''}`}
+              onClick={handleAlternarSom}
+              title={config.somAtivo ? 'Desativar alerta sonoro' : 'Ativar alerta sonoro'}
+              aria-label={config.somAtivo ? 'Desativar alerta sonoro' : 'Ativar alerta sonoro'}
+              aria-pressed={config.somAtivo}
+            >
+              {config.somAtivo ? <Bell size={15} /> : <BellOff size={15} />}
+            </button>
+          )}
+          {!modoLateral && suportaPainelLateral() && (
+            <button
+              className="btn-icon"
+              onClick={handleAbrirNaLateral}
+              disabled={idJanelaAtual === null}
+              title="Abrir na lateral"
+              aria-label="Abrir extensão no painel lateral do navegador"
+            >
+              <PanelRight size={15} />
+            </button>
+          )}
           <button
             className={`btn-icon ${exibindoConfig ? 'active' : ''}`}
             onClick={() => setExibindoConfig(!exibindoConfig)}
             title="Configurações"
+            aria-label="Abrir configurações"
           >
             <Settings size={15} />
           </button>
@@ -262,8 +398,7 @@ export const PopupApp: React.FC = () => {
       {/* Barra de Status */}
       <div className="status-bar">
         <div className="status-badge">
-          <span className={`status-dot ${status}`} />
-          <span>
+          <span className={`status-text status-text--${status}`}>
             {status === 'conectado' && 'Conectado ao SEI'}
             {status === 'verificando' && 'Verificando processos...'}
             {status === 'desconectado' && 'Faça login no SEI'}
@@ -275,9 +410,23 @@ export const PopupApp: React.FC = () => {
         </div>
       </div>
 
+      {!exibindoConfig && (
+        <div className="summary-bar">
+          <Sun size={12} />
+          <span>
+            Hoje: <strong>{resumoHoje.novos}</strong> novo{resumoHoje.novos === 1 ? '' : 's'} processo
+            {resumoHoje.novos === 1 ? '' : 's'} | <strong>{resumoHoje.meus}</strong> atribuído
+            {resumoHoje.meus === 1 ? '' : 's'} a você
+          </span>
+        </div>
+      )}
+
       {status === 'desconectado' && !exibindoConfig && (
         <div className="connection-banner warning">
-          <span>⚠️ Sessão finalizada. Faça login para continuar recebendo notificações.</span>
+          <span className="banner-message">
+            <AlertTriangle size={15} aria-hidden="true" />
+            Sessão finalizada. Faça login para continuar recebendo notificações.
+          </span>
           <button className="btn-banner-action" onClick={() => handleAbrirSei()}>
             Fazer Login
           </button>
@@ -286,7 +435,10 @@ export const PopupApp: React.FC = () => {
 
       {status === 'erro' && !exibindoConfig && (
         <div className="connection-banner error">
-          <span>⚠️ SEI instável ou fora do ar. Tentando reconectar...</span>
+          <span className="banner-message">
+            <AlertTriangle size={15} aria-hidden="true" />
+            SEI instável ou fora do ar. Tentando reconectar...
+          </span>
           <button className="btn-banner-action" onClick={handleVerificarAgora}>
             Reconectar
           </button>
@@ -297,16 +449,20 @@ export const PopupApp: React.FC = () => {
         /* Tela de Configurações */
         <div className="settings-view">
           <div className="setting-group">
-            <label className="setting-label">Minha Sigla / Usuário no SEI</label>
+            <label className="setting-label">Usuário no SEI</label>
             <input
               type="text"
+              inputMode="numeric"
               className="setting-input"
               value={config.usuarioSigla}
-              onChange={(e) => setConfig({ ...config, usuarioSigla: e.target.value.trim() })}
-              placeholder="Ex: MG123456 ou MARCO.GUERRA"
+              onChange={(e) =>
+                setConfig({ ...config, usuarioSigla: e.target.value.replace(/\D/g, '').slice(0, 11) })
+              }
+              placeholder="Ex: 00652162614"
             />
             <span className="setting-hint">
-              Utilizada para filtrar os processos atribuídos a você. Se deixar em branco, tentará capturar automaticamente do SEI.
+              Seu CPF, apenas números — usado para filtrar os processos atribuídos a você. Se deixar em
+              branco, tentará capturar automaticamente do SEI.
             </span>
           </div>
 
@@ -476,6 +632,18 @@ export const PopupApp: React.FC = () => {
               )}
             </div>
 
+            <div className="period-pills">
+              {(['todos', 'hoje', 'ontem'] as PeriodoFiltro[]).map((periodo) => (
+                <button
+                  key={periodo}
+                  className={`period-pill ${periodoFiltro === periodo ? 'active' : ''}`}
+                  onClick={() => setPeriodoFiltro(periodo)}
+                >
+                  {periodo === 'todos' ? 'Todos' : periodo === 'hoje' ? 'Hoje' : 'Ontem'}
+                </button>
+              ))}
+            </div>
+
             {/* Chips de Marcadores */}
             {todosMarcadores.length > 0 && (
               <div className="marker-chips-row">
@@ -506,15 +674,35 @@ export const PopupApp: React.FC = () => {
           <main className="process-list">
             {processosFiltrados.length === 0 ? (
               <div className="empty-state">
-                <FileText size={36} color="var(--text-light)" />
-                <p>Nenhum processo encontrado</p>
-                <span>
-                  {processos.length === 0
-                    ? 'Clique em "Abrir SEI" ou no botão de atualizar (🔄) para sincronizar.'
-                    : filtroTipo === 'meus' && !config?.usuarioSigla
-                    ? 'Configure sua sigla nas opções (⚙️) para ver os processos atribuídos a você.'
-                    : 'Tente alterar os filtros ou termos da busca.'}
-                </span>
+                {processos.length === 0 ? (
+                  <>
+                    <FileText size={36} color="var(--cor-texto-fraco)" />
+                    <p>Nenhum processo carregado ainda</p>
+                    <span>
+                      Sincronize para trazer os processos que já estão no SEI. Isso não dispara
+                      notificações — é só a carga inicial.
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-sync-inicial"
+                      onClick={handleVerificarAgora}
+                      disabled={carregando}
+                    >
+                      <RefreshCw size={14} className={carregando ? 'spin' : ''} />
+                      {carregando ? 'Sincronizando...' : 'Sincronizar'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <FileText size={36} color="var(--cor-texto-fraco)" />
+                    <p>Nenhum processo encontrado</p>
+                    <span>
+                      {filtroTipo === 'meus' && !config?.usuarioSigla
+                        ? 'Configure seu CPF nas opções para ver os processos atribuídos a você.'
+                        : 'Tente alterar os filtros ou termos da busca.'}
+                    </span>
+                  </>
+                )}
               </div>
             ) : (
               processosFiltrados.map((proc) => {
@@ -549,7 +737,13 @@ export const PopupApp: React.FC = () => {
                             {proc.atribuidoPara}
                           </span>
                         )}
-                        {!proc.lido && <span className="badge-new">Novo</span>}
+                        {!proc.lido && proc.motivoAtualizacao && (
+                          <span className="badge-updated">
+                            <Sparkles size={9} style={{ marginRight: 2 }} />
+                            Atualizado
+                          </span>
+                        )}
+                        {!proc.lido && !proc.motivoAtualizacao && <span className="badge-new">Novo</span>}
                       </div>
                     </div>
 
@@ -559,12 +753,33 @@ export const PopupApp: React.FC = () => {
 
                     {proc.marcadores && proc.marcadores.length > 0 && (
                       <div className="card-markers-row">
-                        {proc.marcadores.map((m) => (
-                          <span key={m} className="card-marker-badge">
-                            <Tag size={9} style={{ marginRight: 3 }} />
-                            {m}
-                          </span>
-                        ))}
+                        {proc.marcadores.map((m) => {
+                          const expandido =
+                            marcadorExpandido?.numero === proc.numero && marcadorExpandido?.nome === m.nome;
+                          return (
+                            <button
+                              key={m.nome}
+                              type="button"
+                              className={`card-marker-badge ${m.texto ? 'has-text' : ''} ${expandido ? 'expanded' : ''}`}
+                              title={m.texto || m.nome}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!m.texto) return;
+                                setMarcadorExpandido(expandido ? null : { numero: proc.numero, nome: m.nome });
+                              }}
+                            >
+                              <Tag size={9} style={{ marginRight: 3 }} />
+                              {m.nome}
+                              {m.texto && (expandido ? <ChevronUp size={9} style={{ marginLeft: 2 }} /> : <ChevronDown size={9} style={{ marginLeft: 2 }} />)}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {marcadorExpandido?.numero === proc.numero && (
+                      <div className="marker-detail-box" onClick={(e) => e.stopPropagation()}>
+                        {proc.marcadores?.find((m) => m.nome === marcadorExpandido.nome)?.texto}
                       </div>
                     )}
 
@@ -599,5 +814,5 @@ export const PopupApp: React.FC = () => {
 const elementoRoot = document.getElementById('root');
 if (elementoRoot) {
   const root = createRoot(elementoRoot);
-  root.render(<PopupApp />);
+  root.render(<PopupApp modoLateral={document.body.classList.contains('modo-lateral')} />);
 }

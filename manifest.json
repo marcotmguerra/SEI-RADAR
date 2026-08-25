@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SEI Notifier - Monitor de Processos",
+  "name": "SEI! Alerta",
   "version": "1.0.1",
   "description": "Notificações automáticas de novos processos no SEI com exibição direta do assunto e link de acesso rápido.",
   "icons": {
@@ -11,13 +11,16 @@
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SEI Notifier",
+    "default_title": "SEI! Alerta",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png",
       "128": "icons/icon-128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "background": {
     "service_worker": "assets/background.js",
@@ -28,7 +31,9 @@
     "notifications",
     "storage",
     "tabs",
-    "cookies"
+    "cookies",
+    "offscreen",
+    "sidePanel"
   ],
   "host_permissions": [
     "*://*/*"

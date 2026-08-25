@@ -1,4 +1,4 @@
-import type { ProcessoSei } from '../types';
+import type { DetalheMarcador, ProcessoSei } from '../types';
 
 /**
  * Expressão regular para identificar números de processo no padrão SEI (MG, Federal, etc.)
@@ -135,6 +135,63 @@ export const extrairArgsInfraTooltip = (textoJs: string): string[] => {
 };
 
 /**
+ * Decide, entre os argumentos de uma chamada infraTooltipMostrar, qual representa
+ * o nome do marcador e qual (se houver) representa o texto da observação/despacho.
+ * Ex.: infraTooltipMostrar('Ten Biagini, Of. 3107...', 'Marcador: Almoxarifado')
+ */
+const separarNomeETextoDoTooltip = (
+  args: string[]
+): { nomeBruto: string; textoBruto?: string } | null => {
+  if (args.length >= 2) {
+    const arg1 = args[0] ?? '';
+    const arg2 = args[1] ?? '';
+
+    // No SEI, o padrão é: infraTooltipMostrar(observacao/despacho, nomeDoMarcador)
+    // Ou infraTooltipMostrar(nomeDoMarcador, 'Marcador')
+    // Ou infraTooltipMostrar(observacao, 'Marcador: NomeDoMarcador')
+    const matchCabecalho = arg2.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
+    if (matchCabecalho?.[1]) {
+      return { nomeBruto: matchCabecalho[1], textoBruto: arg1 };
+    }
+
+    if (/^(?:marcador|tag)$/i.test(arg2.trim())) {
+      return { nomeBruto: arg1 };
+    }
+
+    const matchArg1 = arg1.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
+    if (matchArg1?.[1]) {
+      return { nomeBruto: matchArg1[1] };
+    }
+
+    // Usa o segundo argumento como nome do marcador (ex: 'Cia QBRN', 'CIA BRESC')
+    // e o primeiro, quando presente, como texto da observação/despacho
+    return arg2.length > 0 ? { nomeBruto: arg2, textoBruto: arg1 } : { nomeBruto: arg1 };
+  }
+
+  if (args.length === 1 && args[0]) {
+    return { nomeBruto: args[0] };
+  }
+
+  // Se não conseguiu extrair argumentos do JS, não retorna o código fonte JS bruto
+  return null;
+};
+
+/**
+ * Limpa e valida o texto da observação/despacho de um marcador (sem as restrições
+ * de tamanho/conteúdo aplicadas ao nome, já que pode ser um despacho longo)
+ */
+const limparTextoObservacaoMarcador = (textoBruto: string | null | undefined): string | undefined => {
+  if (!textoBruto) return undefined;
+
+  let texto = textoBruto.trim();
+  texto = texto.replace(/<[^>]+>/g, ' ');
+  texto = texto.replace(/\s+/g, ' ').trim();
+
+  if (texto.length === 0 || texto.length > 1000) return undefined;
+  return texto;
+};
+
+/**
  * Limpa e extrai o nome do marcador a partir de qualquer string bruta do SEI
  */
 export const limparNomeMarcador = (textoBruto: string | null | undefined): string | null => {
@@ -145,33 +202,9 @@ export const limparNomeMarcador = (textoBruto: string | null | undefined): strin
   // 1. Trata chamadas de tooltip JavaScript do SEI (infraTooltipMostrar)
   if (texto.includes('infraTooltipMostrar')) {
     const args = extrairArgsInfraTooltip(texto);
-    if (args.length >= 2) {
-      const arg1 = args[0] ?? '';
-      const arg2 = args[1] ?? '';
-
-      // No SEI, o padrão é: infraTooltipMostrar(observacao/despacho, nomeDoMarcador)
-      // Ou infraTooltipMostrar(nomeDoMarcador, 'Marcador')
-      // Ou infraTooltipMostrar(observacao, 'Marcador: NomeDoMarcador')
-      const matchCabecalho = arg2.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
-      if (matchCabecalho?.[1]) {
-        texto = matchCabecalho[1];
-      } else if (/^(?:marcador|tag)$/i.test(arg2.trim())) {
-        texto = arg1;
-      } else {
-        const matchArg1 = arg1.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
-        if (matchArg1?.[1]) {
-          texto = matchArg1[1];
-        } else {
-          // Usa o segundo argumento como nome do marcador (ex: 'Cia QBRN', 'CIA BRESC')
-          texto = arg2.length > 0 ? arg2 : arg1;
-        }
-      }
-    } else if (args.length === 1 && args[0]) {
-      texto = args[0];
-    } else {
-      // Se não conseguiu extrair argumentos do JS, não retorna o código fonte JS bruto
-      return null;
-    }
+    const separado = separarNomeETextoDoTooltip(args);
+    if (!separado) return null;
+    texto = separado.nomeBruto;
   }
 
   // 2. Remove tags HTML caso existam dentro do texto
@@ -225,10 +258,48 @@ export const limparNomeMarcador = (textoBruto: string | null | undefined): strin
 };
 
 /**
- * Extrai marcadores associados a um processo na linha da tabela
+ * Extrai nome e, quando disponível, o texto da observação/despacho de um marcador
+ * a partir de qualquer string bruta do SEI (title, onmouseover, alt, etc.)
  */
-export const extrairMarcadoresDaLinha = (tr: Element): string[] => {
-  const marcadores = new Set<string>();
+export const extrairDetalheMarcador = (textoBruto: string | null | undefined): DetalheMarcador | null => {
+  if (!textoBruto) return null;
+
+  const textoOriginal = textoBruto.trim();
+
+  if (textoOriginal.includes('infraTooltipMostrar')) {
+    const args = extrairArgsInfraTooltip(textoOriginal);
+    const separado = separarNomeETextoDoTooltip(args);
+    if (!separado) return null;
+
+    const nome = limparNomeMarcador(separado.nomeBruto);
+    if (!nome) return null;
+
+    const texto = limparTextoObservacaoMarcador(separado.textoBruto);
+    return texto ? { nome, texto } : { nome };
+  }
+
+  const nome = limparNomeMarcador(textoOriginal);
+  return nome ? { nome } : null;
+};
+
+/**
+ * Extrai marcadores (nome + texto da observação/despacho, quando disponível)
+ * associados a um processo na linha da tabela
+ */
+export const extrairMarcadoresDaLinha = (tr: Element): DetalheMarcador[] => {
+  const marcadores = new Map<string, DetalheMarcador>();
+
+  const registrar = (fonte: string | null | undefined) => {
+    const detalhe = extrairDetalheMarcador(fonte);
+    if (!detalhe) return;
+    const existente = marcadores.get(detalhe.nome);
+    // Mantém o primeiro nome encontrado, mas completa com o texto assim que disponível
+    if (!existente) {
+      marcadores.set(detalhe.nome, detalhe);
+    } else if (!existente.texto && detalhe.texto) {
+      marcadores.set(detalhe.nome, detalhe);
+    }
+  };
 
   // 1. Procura elementos âncoras ou imagens especificamente de marcadores no SEI
   const elementosMarcador = tr.querySelectorAll(
@@ -255,10 +326,7 @@ export const extrairMarcadoresDaLinha = (tr: Element): string[] => {
     }
 
     for (const fonte of fontes) {
-      const nomeLimpo = limparNomeMarcador(fonte);
-      if (nomeLimpo) {
-        marcadores.add(nomeLimpo);
-      }
+      registrar(fonte);
     }
   }
 
@@ -267,14 +335,11 @@ export const extrairMarcadoresDaLinha = (tr: Element): string[] => {
   for (const el of outrosComTitle) {
     const fontes = [el.getAttribute('onmouseover'), el.getAttribute('title'), el.getAttribute('alt')];
     for (const fonte of fontes) {
-      const nomeLimpo = limparNomeMarcador(fonte);
-      if (nomeLimpo) {
-        marcadores.add(nomeLimpo);
-      }
+      registrar(fonte);
     }
   }
 
-  return Array.from(marcadores);
+  return Array.from(marcadores.values());
 };
 
 /**
@@ -311,7 +376,7 @@ export const extrairTodosMarcadoresDaPagina = (htmlOuDoc: string | Document): st
   for (const tr of linhas) {
     const daLinha = extrairMarcadoresDaLinha(tr);
     for (const m of daLinha) {
-      marcadores.add(m);
+      marcadores.add(m.nome);
     }
   }
 
@@ -457,7 +522,7 @@ export const parseProcessosHtml = (
 
     let assunto: string | null = null;
     let atribuidoPara: string | null = null;
-    let marcadores: string[] = [];
+    let marcadores: DetalheMarcador[] = [];
 
     if (tr) {
       assunto = extrairAssuntoDaLinha(tr, link);

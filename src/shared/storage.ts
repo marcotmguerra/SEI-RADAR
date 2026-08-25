@@ -65,10 +65,28 @@ export const salvarConfiguracao = async (
   return nova;
 };
 
+/**
+ * Normaliza processos gravados antes da introdução de DetalheMarcador,
+ * quando marcadores eram salvos como string[] em vez de { nome, texto }[]
+ */
+const normalizarProcesso = (processo: any): ProcessoSei => {
+  if (
+    Array.isArray(processo?.marcadores) &&
+    processo.marcadores.length > 0 &&
+    typeof processo.marcadores[0] === 'string'
+  ) {
+    return {
+      ...processo,
+      marcadores: processo.marcadores.map((nome: string) => ({ nome })),
+    };
+  }
+  return processo;
+};
+
 export const obterProcessos = async (): Promise<ProcessoSei[]> => {
   const arm = obterArmazenamento();
   const lista = await arm.get(CHAVE_PROCESSOS);
-  return Array.isArray(lista) ? lista : [];
+  return Array.isArray(lista) ? lista.map(normalizarProcesso) : [];
 };
 
 export const salvarProcessos = async (processos: ProcessoSei[]): Promise<void> => {
