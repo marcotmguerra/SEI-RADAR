@@ -1,12 +1,14 @@
 :root {
-  --primary: #2563eb;
-  --primary-hover: #1d4ed8;
-  --primary-light: #eff6ff;
+  --primary: #003366;
+  --primary-hover: #002244;
+  --primary-light: #e8eef5;
+  --sei-header: #6c2825;
+  --sei-header-hover: #56201e;
   --bg: #ffffff;
   --bg-subtle: #f8fafc;
   --bg-card: #ffffff;
-  --border: #e2e8f0;
-  --text: #0f172a;
+  --border: #dbe2ea;
+  --text: #1e293b;
   --text-muted: #64748b;
   --text-light: #94a3b8;
   --success: #16a34a;
@@ -15,8 +17,8 @@
   --warning-bg: #fffbeb;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
-  --badge-new: #3b82f6;
-  --radius: 8px;
+  --badge-new: #004080;
+  --radius: 6px;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
@@ -70,13 +72,14 @@ body {
 
 /* Header */
 .header {
-  padding: 12px 16px;
-  background-color: var(--bg-subtle);
-  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  background-color: var(--sei-header);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.15);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  color: #ffffff;
 }
 
 .header-title-row {
@@ -86,11 +89,11 @@ body {
 }
 
 .logo-badge {
-  background: linear-gradient(135deg, var(--primary), #4f46e5);
-  color: white;
-  font-weight: bold;
+  background-color: #ffffff;
+  color: var(--sei-header);
+  font-weight: 800;
   font-size: 11px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   border-radius: 4px;
   letter-spacing: 0.5px;
 }
@@ -98,7 +101,7 @@ body {
 .title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--text);
+  color: #ffffff;
 }
 
 .header-actions {
@@ -107,50 +110,50 @@ body {
   gap: 6px;
 }
 
-.btn-icon {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+.header .btn-icon {
+  background-color: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all 0.15s ease;
-  background-color: var(--bg);
 }
 
-.btn-icon:hover {
-  background-color: var(--bg-subtle);
-  color: var(--text);
-  border-color: var(--text-muted);
+.header .btn-icon:hover {
+  background-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.5);
 }
 
-.btn-icon.active {
-  background-color: var(--primary);
-  color: white;
-  border-color: var(--primary);
+.header .btn-icon.active {
+  background-color: #ffffff;
+  color: var(--sei-header);
+  border-color: #ffffff;
 }
 
 .btn-open-sei {
-  background-color: var(--primary);
-  color: white;
-  border: none;
-  font-weight: 600;
+  background-color: #ffffff;
+  color: var(--sei-header);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  font-weight: 700;
   font-size: 12px;
-  padding: 6px 12px;
-  border-radius: 6px;
+  padding: 5px 10px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 5px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
 }
 
 .btn-open-sei:hover {
-  background-color: var(--primary-hover);
+  background-color: #f1f5f9;
+  color: var(--sei-header-hover);
 }
 
 /* Status Bar */
@@ -308,7 +311,7 @@ body {
 .filter-pill.active {
   background-color: var(--primary-light);
   color: var(--primary);
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .btn-mark-all {
@@ -317,7 +320,7 @@ body {
   color: var(--primary);
   font-size: 11px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .btn-mark-all:hover {
@@ -363,9 +366,9 @@ body {
 }
 
 .marker-chip.active {
-  background-color: #dbeafe;
-  color: #1d4ed8;
-  border-color: #93c5fd;
+  background-color: var(--primary-light);
+  color: var(--primary);
+  border-color: #b9cee3;
   font-weight: 600;
 }
 
@@ -391,13 +394,13 @@ body {
 }
 
 .process-card:hover {
-  border-color: var(--primary);
+  border-color: #94a3b8;
   box-shadow: var(--shadow-sm);
 }
 
 .process-card.unread {
-  border-left: 3px solid var(--primary);
-  background-color: var(--bg-subtle);
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .process-header {
@@ -443,6 +446,7 @@ body {
 }
 
 .process-number:hover {
+  color: var(--primary-hover);
   text-decoration: underline;
 }
 
@@ -695,19 +699,19 @@ input:checked + .slider:before {
 }
 
 .btn-primary-full {
-  background-color: var(--primary);
+  background-color: var(--sei-header);
   color: white;
   border: none;
   padding: 10px 14px;
-  border-radius: 6px;
+  border-radius: 4px;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition: background-color 0.15s ease;
 }
 
 .btn-primary-full:hover {
-  background-color: var(--primary-hover);
+  background-color: var(--sei-header-hover);
 }
 
 .spin {
