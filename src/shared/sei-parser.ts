@@ -80,18 +80,57 @@ export const extrairAtribuicaoDaLinha = (tr: Element): string | null => {
 };
 
 /**
- * Extrai argumentos passados para a função infraTooltipMostrar('arg1', 'arg2')
+ * Extrai de forma robusta todos os argumentos de string de uma chamada infraTooltipMostrar
  */
-const extrairArgsTooltip = (textoJs: string): string[] => {
-  const match = textoJs.match(/infraTooltipMostrar\s*\(([\s\S]*?)\)/iu);
-  if (!match?.[1]) return [];
-  const argsStr = match[1];
+export const extrairArgsInfraTooltip = (textoJs: string): string[] => {
+  const indexInicio = textoJs.indexOf('infraTooltipMostrar');
+  if (indexInicio === -1) return [];
+
+  const abreParen = textoJs.indexOf('(', indexInicio);
+  if (abreParen === -1) return [];
+
   const args: string[] = [];
-  const regexStr = /['"]([^'"]*)['"]/g;
-  let m: RegExpExecArray | null;
-  while ((m = regexStr.exec(argsStr)) !== null) {
-    if (m[1] !== undefined) args.push(m[1]);
+  let dentroDeString = false;
+  let quoteChar = '';
+  let escape = false;
+  let buffer = '';
+
+  for (let i = abreParen + 1; i < textoJs.length; i++) {
+    const char = textoJs[i];
+
+    if (escape) {
+      if (char === 'n') buffer += '\n';
+      else if (char === 'r') buffer += '\r';
+      else if (char === 't') buffer += '\t';
+      else buffer += char;
+      escape = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escape = true;
+      continue;
+    }
+
+    if (dentroDeString) {
+      if (char === quoteChar) {
+        dentroDeString = false;
+        args.push(buffer);
+        buffer = '';
+      } else {
+        buffer += char;
+      }
+    } else {
+      if (char === "'" || char === '"') {
+        dentroDeString = true;
+        quoteChar = char;
+        buffer = '';
+      } else if (char === ')') {
+        break;
+      }
+    }
   }
+
   return args;
 };
 
@@ -105,23 +144,33 @@ export const limparNomeMarcador = (textoBruto: string | null | undefined): strin
 
   // 1. Trata chamadas de tooltip JavaScript do SEI (infraTooltipMostrar)
   if (texto.includes('infraTooltipMostrar')) {
-    const args = extrairArgsTooltip(texto);
+    const args = extrairArgsInfraTooltip(texto);
     if (args.length >= 2) {
-      const [arg1, arg2] = args;
-      // Se o segundo argumento for o cabeçalho (ex: "Marcador: Urgente" ou "Marcador")
-      if (/^marcador\s*:\s*(.+)/i.test(arg2)) {
-        const m = arg2.match(/^marcador\s*:\s*(.+)/i);
-        if (m?.[1]) texto = m[1];
-      } else if (/^marcador$/i.test(arg2)) {
+      const arg1 = args[0] ?? '';
+      const arg2 = args[1] ?? '';
+
+      // No SEI, o padrão é: infraTooltipMostrar(observacao/despacho, nomeDoMarcador)
+      // Ou infraTooltipMostrar(nomeDoMarcador, 'Marcador')
+      // Ou infraTooltipMostrar(observacao, 'Marcador: NomeDoMarcador')
+      const matchCabecalho = arg2.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
+      if (matchCabecalho?.[1]) {
+        texto = matchCabecalho[1];
+      } else if (/^(?:marcador|tag)$/i.test(arg2.trim())) {
         texto = arg1;
-      } else if (/^marcador\s*:\s*(.+)/i.test(arg1)) {
-        const m = arg1.match(/^marcador\s*:\s*(.+)/i);
-        if (m?.[1]) texto = m[1];
       } else {
-        texto = arg2.length > 0 && !/^marcador$/i.test(arg2) ? arg2 : arg1;
+        const matchArg1 = arg1.match(/^(?:marcador|tag)\s*:\s*(.+)/i);
+        if (matchArg1?.[1]) {
+          texto = matchArg1[1];
+        } else {
+          // Usa o segundo argumento como nome do marcador (ex: 'Cia QBRN', 'CIA BRESC')
+          texto = arg2.length > 0 ? arg2 : arg1;
+        }
       }
-    } else if (args.length === 1) {
+    } else if (args.length === 1 && args[0]) {
       texto = args[0];
+    } else {
+      // Se não conseguiu extrair argumentos do JS, não retorna o código fonte JS bruto
+      return null;
     }
   }
 
@@ -144,10 +193,21 @@ export const limparNomeMarcador = (textoBruto: string | null | undefined): strin
   // 7. Remove quebras de linha e espaços múltiplos
   texto = texto.replace(/\s+/g, ' ').trim();
 
-  // 8. Validações finais de conteúdo e exclusão de termos de ação
+  // 8. Rejeita se ainda contiver trechos de código JS ou lixo
+  if (
+    texto.includes('infraTooltipMostrar') ||
+    texto.includes('return ') ||
+    texto.includes('javascript:') ||
+    texto.includes(';')
+  ) {
+    return null;
+  }
+
+  // 9. Validações finais de conteúdo e exclusão de termos de ação
   const minusculo = texto.toLowerCase();
   if (
     texto.length < 2 ||
+    texto.length > 60 ||
     minusculo === 'marcador' ||
     minusculo === 'marcadores' ||
     minusculo.startsWith('gerenciar marcador') ||

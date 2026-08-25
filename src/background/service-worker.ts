@@ -6,7 +6,7 @@ import {
   salvarStatusSessao,
   salvarConfiguracao,
 } from '../shared/storage';
-import type { ConfiguracaoExtensao, MensagemRuntime, ProcessoSei } from '../types';
+import type { ConfiguracaoExtensao, MensagemRuntime, ProcessoSei, StatusSessao } from '../types';
 
 const NOME_ALARME = 'sei_alarme_verificacao';
 
