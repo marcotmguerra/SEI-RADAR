@@ -104,6 +104,17 @@ declare namespace chrome {
     };
   }
 
+  export namespace permissions {
+    export interface Permissions {
+      permissions?: string[];
+      origins?: string[];
+    }
+
+    export function contains(permissions: Permissions): Promise<boolean>;
+    export function request(permissions: Permissions): Promise<boolean>;
+    export function remove(permissions: Permissions): Promise<boolean>;
+  }
+
   export namespace offscreen {
     export enum Reason {
       AUDIO_PLAYBACK = 'AUDIO_PLAYBACK',

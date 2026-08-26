@@ -10,6 +10,7 @@ import {
   processoPertenceAoRadar,
   filtrarProcessosPorRadar,
 } from '../shared/radar';
+import { possuiPermissaoParaUrl } from '../shared/permissoes';
 import type {
   ConfiguracaoExtensao,
   DetalheMarcador,
@@ -479,7 +480,19 @@ export const executarVerificacaoSei = async (): Promise<{
     return { sucesso: false, novos: 0, total: 0, mensagem: 'Aguardando página do SEI carregar' };
   }
 
-  // 2. Não há nenhuma aba do SEI aberta: faz requisição HTTP direta com cookies de sessão
+  // 2. Não há nenhuma aba do SEI aberta: faz requisição HTTP direta com cookies de sessão.
+  // Requer permissão de host concedida em tempo de execução para a origem configurada
+  // (chrome.permissions), já que host_permissions não é mais fixo em *://*/* no manifesto.
+  const temPermissaoDeHost = await possuiPermissaoParaUrl(config.urlControle);
+  if (!temPermissaoDeHost) {
+    return {
+      sucesso: false,
+      novos: 0,
+      total: 0,
+      mensagem: 'Conceda acesso à URL do SEI nas configurações para sincronizar sem manter uma aba aberta',
+    };
+  }
+
   try {
     const resposta = await fetch(config.urlControle, {
       method: 'GET',

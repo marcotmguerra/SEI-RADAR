@@ -45,6 +45,7 @@ import {
   normalizarParaComparacao,
 } from '../shared/radar';
 import { suportaPainelLateral } from '../shared/painel-lateral';
+import { solicitarPermissaoParaUrl } from '../shared/permissoes';
 import type {
   ConfiguracaoExtensao,
   ProcessoSei,
@@ -251,6 +252,18 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const handleSalvarConfig = async (novaConfiguracao?: Partial<ConfiguracaoExtensao>) => {
     if (!config) return;
     const configAtualizada = { ...config, ...(novaConfiguracao || {}) };
+
+    // Solicita, neste gesto do usuário, acesso apenas ao domínio do SEI configurado —
+    // necessário para a verificação em segundo plano funcionar sem uma aba do SEI aberta
+    let avisoPermissao: string | null = null;
+    if (configAtualizada.urlControle) {
+      const concedida = await solicitarPermissaoParaUrl(configAtualizada.urlControle);
+      if (!concedida) {
+        avisoPermissao =
+          'Permissão não concedida: a sincronização automática só funcionará com uma aba do SEI aberta.';
+      }
+    }
+
     setConfig(configAtualizada);
     await salvarConfiguracao(configAtualizada);
 
@@ -261,12 +274,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
     }
 
-    setMensagemAviso('Configurações salvas!');
+    setMensagemAviso(avisoPermissao || 'Configurações salvas!');
     await carregarDados();
     setTimeout(() => {
       setMensagemAviso(null);
       setExibindoConfig(false);
-    }, 1000);
+    }, avisoPermissao ? 3000 : 1000);
   };
 
   // Handlers do Onboarding
