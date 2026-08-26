@@ -489,7 +489,8 @@ export const executarVerificacaoSei = async (): Promise<{
       sucesso: false,
       novos: 0,
       total: 0,
-      mensagem: 'Conceda acesso à URL do SEI nas configurações para sincronizar sem manter uma aba aberta',
+      mensagem:
+        'Sem permissão para verificar em segundo plano. Mantenha uma aba do SEI aberta, ou conceda acesso à URL do SEI nas configurações para sincronizar sem precisar de aba aberta.',
     };
   }
 
