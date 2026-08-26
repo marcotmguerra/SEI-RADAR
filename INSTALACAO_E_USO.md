@@ -56,7 +56,7 @@ Para acompanhar os alertas facilmente:
 - Clique no botão **"Abrir SEI"** se ainda não estiver na página de controle.
 - Existem duas formas de manter o Radar sincronizado, e você pode usar as duas:
   1. **Deixar uma aba do SEI aberta** — a extensão lê os processos direto da tela, a cada 5 minutos (configurável), sem pedir nenhuma permissão extra.
-  2. **Verificação em segundo plano, sem precisar de aba aberta** — na tela de Configurações, ao clicar em **"Salvar"** com a URL do SEI preenchida, o navegador vai pedir permissão de acesso apenas àquele domínio do SEI. Se você conceder, o Radar consegue verificar novidades mesmo com o navegador minimizado ou sem nenhuma aba do SEI aberta.
+  2. **Verificação em segundo plano, sem precisar de aba aberta** — na tela de Configurações, ao clicar em **"Salvar"** com a URL do SEI preenchida, o navegador vai pedir permissão de acesso apenas àquele domínio do SEI (disponível para domínios `.gov.br`, `.jus.br`, `.leg.br`, `.mp.br` e `.def.br`). Se você conceder, o Radar consegue verificar novidades mesmo com o navegador minimizado ou sem nenhuma aba do SEI aberta.
 - Se você não conceder essa permissão, nada quebra: o Radar simplesmente continua sincronizando normalmente sempre que houver uma aba do SEI aberta.
 
 ### 2. Receber Alertas
