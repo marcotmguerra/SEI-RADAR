@@ -222,8 +222,10 @@
         minutos), a extensão faz uma requisição à página de controle do SEI utilizando a sua sessão já autenticada
         no navegador (<em>cookies</em> de sessão existentes), para verificar se há processos novos — sem realizar
         login automático nem armazenar usuário/senha. Esse caminho só funciona se você conceder, nas Configurações,
-        permissão de acesso ao domínio específico do SEI que utiliza; sem essa permissão, a extensão continua
-        funcionando normalmente por meio do script de conteúdo, sempre que houver uma aba do SEI aberta.
+        permissão de acesso ao domínio específico do SEI que utiliza — disponível apenas para domínios
+        institucionais brasileiros (<code>.gov.br</code>, <code>.jus.br</code>, <code>.leg.br</code>,
+        <code>.mp.br</code>, <code>.def.br</code>); sem essa permissão, a extensão continua funcionando
+        normalmente por meio do script de conteúdo, sempre que houver uma aba do SEI aberta.
       </li>
     </ol>
     <p>
@@ -269,12 +271,16 @@
             <td>Exibir o Radar no painel lateral do navegador, se você optar por essa visualização</td>
           </tr>
           <tr>
-            <td><code>optional_host_permissions (*://*/*)</code></td>
+            <td><code>optional_host_permissions</code><br />
+              (<code>*.gov.br</code>, <code>*.jus.br</code>, <code>*.leg.br</code>, <code>*.mp.br</code>,
+              <code>*.def.br</code>)</td>
             <td>Não é concedida na instalação. É pedida em tempo de execução, restrita apenas ao domínio
-              específico do SEI que você configurar, e somente quando você salva a URL de controle nas
-              Configurações — permite verificar novidades em segundo plano mesmo sem nenhuma aba do SEI
-              aberta. Recusar essa permissão não impede o uso da extensão: o Radar continua funcionando
-              normalmente sempre que houver uma aba do SEI aberta</td>
+              específico do SEI que você configurar (dentro dos domínios institucionais brasileiros
+              listados ao lado — nunca a qualquer site da internet), e somente quando você salva a URL de
+              controle nas Configurações — permite verificar novidades em segundo plano mesmo sem nenhuma
+              aba do SEI aberta. Recusar essa permissão, ou usar um domínio fora dessa lista, não impede o
+              uso da extensão: o Radar continua funcionando normalmente sempre que houver uma aba do SEI
+              aberta</td>
           </tr>
         </tbody>
       </table>

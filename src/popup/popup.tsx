@@ -45,7 +45,7 @@ import {
   normalizarParaComparacao,
 } from '../shared/radar';
 import { suportaPainelLateral } from '../shared/painel-lateral';
-import { solicitarPermissaoParaUrl } from '../shared/permissoes';
+import { solicitarPermissaoParaUrl, ehOrigemSuportada } from '../shared/permissoes';
 import type {
   ConfiguracaoExtensao,
   ProcessoSei,
@@ -266,11 +266,17 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     // necessário para a verificação em segundo plano funcionar sem uma aba do SEI aberta
     let avisoPermissao: string | null = null;
     if (configAtualizada.urlControle) {
-      const concedida = await solicitarPermissaoParaUrl(configAtualizada.urlControle);
-      setSemPermissaoDeHost(!concedida);
-      if (!concedida) {
+      if (!ehOrigemSuportada(configAtualizada.urlControle)) {
+        setSemPermissaoDeHost(true);
         avisoPermissao =
-          'Sem problema: configurações salvas. Sem essa permissão, o Radar sincroniza normalmente sempre que houver uma aba do SEI aberta.';
+          'Configurações salvas. Este domínio não é elegível para verificação em segundo plano (suportamos .gov.br, .jus.br, .leg.br, .mp.br e .def.br) — o Radar continua funcionando normalmente com uma aba do SEI aberta.';
+      } else {
+        const concedida = await solicitarPermissaoParaUrl(configAtualizada.urlControle);
+        setSemPermissaoDeHost(!concedida);
+        if (!concedida) {
+          avisoPermissao =
+            'Sem problema: configurações salvas. Sem essa permissão, o Radar sincroniza normalmente sempre que houver uma aba do SEI aberta.';
+        }
       }
     }
 
@@ -1039,9 +1045,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                 deixe uma aba do SEI aberta em qualquer momento — a extensão lê os processos
                 direto da tela, sem pedir nenhuma permissão extra; ou (2) ao clicar em "Salvar"
                 aqui embaixo, o navegador vai pedir permissão de acesso apenas a este domínio do
-                SEI, para a extensão também conseguir verificar novidades em segundo plano mesmo
-                sem nenhuma aba aberta. Se você recusar essa permissão, nada quebra — o Radar
-                continua funcionando normalmente sempre que houver uma aba do SEI aberta.
+                SEI (disponível para domínios .gov.br, .jus.br, .leg.br, .mp.br e .def.br), para a
+                extensão também conseguir verificar novidades em segundo plano mesmo sem nenhuma
+                aba aberta. Se você recusar essa permissão, ou seu domínio não estiver nessa
+                lista, nada quebra — o Radar continua funcionando normalmente sempre que houver
+                uma aba do SEI aberta.
               </span>
             </div>
 

@@ -48,7 +48,7 @@ O Radar tem duas formas de se manter atualizado, e você pode usar as duas junta
 1. **Com uma aba do SEI aberta** — a extensão lê os processos direto da tela, sem pedir nenhuma permissão extra. É o modo padrão e funciona sempre.
 2. **Em segundo plano, sem nenhuma aba do SEI aberta** — ao salvar a URL de controle do SEI nas Configurações, o navegador pede permissão de acesso *apenas àquele domínio* para a extensão poder verificar novidades periodicamente mesmo sem aba aberta. Se você não conceder, nada quebra: o Radar continua funcionando normalmente todas as vezes que houver uma aba do SEI aberta.
 
-Essa permissão é opcional (`optional_host_permissions`) e só é pedida no momento em que você clica em "Salvar", nunca automaticamente e nunca para outros sites.
+Essa permissão é opcional (`optional_host_permissions`), restrita a domínios institucionais brasileiros (`.gov.br`, `.jus.br`, `.leg.br`, `.mp.br`, `.def.br` — não a qualquer site da internet), e só é pedida no momento em que você clica em "Salvar".
 
 ---
 
@@ -76,6 +76,6 @@ npm run dev
 - Não envia dados para servidores externos ou serviços em nuvem.
 - Os processos coletados e as preferências de configuração ficam armazenados exclusivamente na memória local do seu próprio navegador (`chrome.storage.local`).
 - A seleção pessoal de escopo e etiquetas não afeta as marcações nem a visualização de outros usuários da unidade.
-- Nenhuma permissão de acesso a sites é concedida na instalação. O acesso a um domínio do SEI só é pedido em tempo de execução, restrito àquele domínio específico, e apenas se você optar por usar a verificação em segundo plano (veja a seção acima).
+- Nenhuma permissão de acesso a sites é concedida na instalação. O acesso a um domínio do SEI só é pedido em tempo de execução, restrito àquele domínio específico dentro de uma lista de domínios institucionais brasileiros, e apenas se você optar por usar a verificação em segundo plano (veja a seção acima).
 - Consulte a [Política de Privacidade completa](./docs/index.html) para detalhes sobre dados coletados, permissões utilizadas e seus direitos.
   Assim que publicada via GitHub Pages (apontando para a pasta `/docs`) ou Cloudflare Pages, a página fica disponível como um link público independente do código-fonte.
