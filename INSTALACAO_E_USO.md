@@ -54,7 +54,10 @@ Para acompanhar os alertas facilmente:
 - Faça login normal no SEI no seu navegador.
 - Clique no ícone do **SEI Radar** na barra de ferramentas.
 - Clique no botão **"Abrir SEI"** se ainda não estiver na página de controle.
-- A extensão fará a checagem automática em segundo plano a cada 5 minutos (configurável).
+- Existem duas formas de manter o Radar sincronizado, e você pode usar as duas:
+  1. **Deixar uma aba do SEI aberta** — a extensão lê os processos direto da tela, a cada 5 minutos (configurável), sem pedir nenhuma permissão extra.
+  2. **Verificação em segundo plano, sem precisar de aba aberta** — na tela de Configurações, ao clicar em **"Salvar"** com a URL do SEI preenchida, o navegador vai pedir permissão de acesso apenas àquele domínio do SEI. Se você conceder, o Radar consegue verificar novidades mesmo com o navegador minimizado ou sem nenhuma aba do SEI aberta.
+- Se você não conceder essa permissão, nada quebra: o Radar simplesmente continua sincronizando normalmente sempre que houver uma aba do SEI aberta.
 
 ### 2. Receber Alertas
 - Quando um novo processo chegar na sua unidade (ou no seu Radar), uma notificação aparecerá no canto da tela com o **Número do processo** e o **Assunto**.
@@ -85,3 +88,6 @@ Para acompanhar os alertas facilmente:
 
 #### É seguro usar no computador de trabalho?
 - **Sim, 100% seguro.** A extensão é somente leitura, não modifica dados no SEI, não executa códigos externos e roda estritamente dentro do seu próprio navegador sem servidores intermediários.
+
+#### O navegador pediu permissão de acesso a um site do SEI. Preciso aceitar?
+- Não é obrigatório. Essa permissão só é pedida quando você salva a URL do SEI nas Configurações, e serve apenas para a verificação em segundo plano (sem precisar manter uma aba do SEI aberta). Se você recusar, o Radar continua funcionando normalmente sempre que houver uma aba do SEI aberta — só não vai conseguir verificar novidades enquanto nenhuma aba estiver aberta.

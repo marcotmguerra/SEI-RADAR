@@ -137,7 +137,7 @@
   <div class="wrap">
     <h1>Política de Privacidade — SEI! Radar</h1>
     <p class="subtitle">Notificações automáticas de novos processos no SEI, com extração de assunto e link de acesso rápido.</p>
-    <p class="meta">Última atualização: 25 de agosto de 2026</p>
+    <p class="meta">Última atualização: 26 de agosto de 2026</p>
 
     <p>
       <strong>Resumo:</strong> o SEI! Radar não possui servidores próprios, não envia nenhum dado para a internet e
@@ -218,10 +218,12 @@
         assunto, atribuição e marcadores.
       </li>
       <li>
-        <strong>Verificação periódica em segundo plano:</strong> em intervalos configuráveis (1 a 15 minutos), a
-        extensão faz uma requisição à página de controle do SEI utilizando a sua sessão já autenticada no
-        navegador (<em>cookies</em> de sessão existentes), para verificar se há processos novos — sem realizar
-        login automático nem armazenar usuário/senha.
+        <strong>Verificação periódica em segundo plano (opcional):</strong> em intervalos configuráveis (1 a 15
+        minutos), a extensão faz uma requisição à página de controle do SEI utilizando a sua sessão já autenticada
+        no navegador (<em>cookies</em> de sessão existentes), para verificar se há processos novos — sem realizar
+        login automático nem armazenar usuário/senha. Esse caminho só funciona se você conceder, nas Configurações,
+        permissão de acesso ao domínio específico do SEI que utiliza; sem essa permissão, a extensão continua
+        funcionando normalmente por meio do script de conteúdo, sempre que houver uma aba do SEI aberta.
       </li>
     </ol>
     <p>
@@ -258,24 +260,21 @@
             <td>Identificar abas do SEI já abertas e abrir/focar o processo ao clicar em uma notificação</td>
           </tr>
           <tr>
-            <td><code>cookies</code></td>
-            <td>Reaproveitar a sessão autenticada existente do SEI ao fazer a verificação em segundo plano
-              (a extensão não lê nem grava cookies de outros sites)</td>
-          </tr>
-          <tr>
             <td><code>offscreen</code></td>
-            <td>Reproduzir o alerta sonoro (áudio) de forma discreta, já que o service worker não acessa a
-              interface diretamente</td>
+            <td>Reproduzir o alerta sonoro (áudio) e interpretar o HTML do SEI com DOMParser, já que o
+              service worker não tem acesso direto a essas APIs de DOM</td>
           </tr>
           <tr>
             <td><code>sidePanel</code></td>
             <td>Exibir o Radar no painel lateral do navegador, se você optar por essa visualização</td>
           </tr>
           <tr>
-            <td><code>host_permissions (*://*/*)</code></td>
-            <td>Necessária tecnicamente para o content script funcionar em qualquer domínio/subdomínio de SEI
-              utilizado por diferentes instituições; na prática, o script só atua em páginas cuja URL contenha
-              padrões do SEI (ex.: <code>controlador.php</code>, <code>acao=procedimento_*</code>)</td>
+            <td><code>optional_host_permissions (*://*/*)</code></td>
+            <td>Não é concedida na instalação. É pedida em tempo de execução, restrita apenas ao domínio
+              específico do SEI que você configurar, e somente quando você salva a URL de controle nas
+              Configurações — permite verificar novidades em segundo plano mesmo sem nenhuma aba do SEI
+              aberta. Recusar essa permissão não impede o uso da extensão: o Radar continua funcionando
+              normalmente sempre que houver uma aba do SEI aberta</td>
           </tr>
         </tbody>
       </table>

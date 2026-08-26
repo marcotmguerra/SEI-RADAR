@@ -45,6 +45,7 @@ import {
   normalizarParaComparacao,
 } from '../shared/radar';
 import { suportaPainelLateral } from '../shared/painel-lateral';
+import { solicitarPermissaoParaUrl } from '../shared/permissoes';
 import type {
   ConfiguracaoExtensao,
   ProcessoSei,
@@ -251,6 +252,18 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const handleSalvarConfig = async (novaConfiguracao?: Partial<ConfiguracaoExtensao>) => {
     if (!config) return;
     const configAtualizada = { ...config, ...(novaConfiguracao || {}) };
+
+    // Solicita, neste gesto do usuário, acesso apenas ao domínio do SEI configurado —
+    // necessário para a verificação em segundo plano funcionar sem uma aba do SEI aberta
+    let avisoPermissao: string | null = null;
+    if (configAtualizada.urlControle) {
+      const concedida = await solicitarPermissaoParaUrl(configAtualizada.urlControle);
+      if (!concedida) {
+        avisoPermissao =
+          'Sem problema: configurações salvas. Sem essa permissão, o Radar sincroniza normalmente sempre que houver uma aba do SEI aberta.';
+      }
+    }
+
     setConfig(configAtualizada);
     await salvarConfiguracao(configAtualizada);
 
@@ -261,12 +274,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
     }
 
-    setMensagemAviso('Configurações salvas!');
+    setMensagemAviso(avisoPermissao || 'Configurações salvas!');
     await carregarDados();
     setTimeout(() => {
       setMensagemAviso(null);
       setExibindoConfig(false);
-    }, 1000);
+    }, avisoPermissao ? 3000 : 1000);
   };
 
   // Handlers do Onboarding
@@ -999,6 +1012,15 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                 onChange={(e) => setConfig({ ...config, urlControle: e.target.value })}
                 placeholder="https://www.sei.mg.gov.br/sei/controlador.php?acao=procedimento_controlar"
               />
+              <span className="setting-hint">
+                Você tem duas formas de manter o Radar sincronizado, e pode usar as duas: (1)
+                deixe uma aba do SEI aberta em qualquer momento — a extensão lê os processos
+                direto da tela, sem pedir nenhuma permissão extra; ou (2) ao clicar em "Salvar"
+                aqui embaixo, o navegador vai pedir permissão de acesso apenas a este domínio do
+                SEI, para a extensão também conseguir verificar novidades em segundo plano mesmo
+                sem nenhuma aba aberta. Se você recusar essa permissão, nada quebra — o Radar
+                continua funcionando normalmente sempre que houver uma aba do SEI aberta.
+              </span>
             </div>
 
             <div className="setting-group">
