@@ -17,6 +17,7 @@ import type {
   MensagemRuntime,
   ProcessoSei,
   ResultadoParseHtmlSei,
+  ResultadoVerificacaoSei,
   StatusSessao,
 } from '../types';
 
@@ -413,12 +414,7 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
  * 1. Primeiro tenta comunicar com abas abertas do SEI.
  * 2. Caso não haja abas abertas, faz fetch direto com credenciais de sessão.
  */
-export const executarVerificacaoSei = async (): Promise<{
-  sucesso: boolean;
-  novos: number;
-  total: number;
-  mensagem?: string;
-}> => {
+export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei> => {
   const config = await obterConfiguracao();
 
   // 1. Tenta obter dados de alguma aba ativa do SEI
@@ -491,6 +487,7 @@ export const executarVerificacaoSei = async (): Promise<{
       total: 0,
       mensagem:
         'Sem permissão para verificar em segundo plano. Mantenha uma aba do SEI aberta, ou conceda acesso à URL do SEI nas configurações para sincronizar sem precisar de aba aberta.',
+      semPermissao: true,
     };
   }
 

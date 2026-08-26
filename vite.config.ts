@@ -20,17 +20,21 @@ const copyExtensionFilesPlugin = () => ({
       resolve(distDir, 'manifest.json')
     );
 
-    // Copia pasta icons
+    // Copia pasta icons, exceto o icon.svg: é apenas a fonte usada por
+    // scripts/generate-icons.js para gerar os PNGs abaixo, não é referenciado
+    // pelo manifest nem por nenhuma página, e só engordaria o pacote (~700KB)
     if (fs.existsSync(iconsDir)) {
       if (!fs.existsSync(distIconsDir)) {
         fs.mkdirSync(distIconsDir, { recursive: true });
       }
-      fs.readdirSync(iconsDir).forEach((file) => {
-        fs.copyFileSync(
-          resolve(iconsDir, file),
-          resolve(distIconsDir, file)
-        );
-      });
+      fs.readdirSync(iconsDir)
+        .filter((file) => file !== 'icon.svg')
+        .forEach((file) => {
+          fs.copyFileSync(
+            resolve(iconsDir, file),
+            resolve(distIconsDir, file)
+          );
+        });
     }
 
     console.log('✓ Manifest e ícones copiados com sucesso para a pasta dist/');
