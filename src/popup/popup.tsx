@@ -52,6 +52,7 @@ import type {
   StatusSessao,
   RegraNotificacao,
   EscopoRadar,
+  ResultadoVerificacaoSei,
 } from '../types';
 
 const formatarHora = (dataIso: string): string => {
@@ -116,6 +117,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
   const [idJanelaAtual, setIdJanelaAtual] = useState<number | null>(null);
   const [confirmandoLimpeza, setConfirmandoLimpeza] = useState(false);
+  const [semPermissaoDeHost, setSemPermissaoDeHost] = useState(false);
   const timeoutConfirmacaoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estados temporários para Onboarding
@@ -152,8 +154,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     carregarDados();
     if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
       chrome.runtime
-        .sendMessage({ tipo: 'VERIFICAR_AGORA' })
-        .then(() => carregarDados())
+        .sendMessage<{ tipo: string }, ResultadoVerificacaoSei>({ tipo: 'VERIFICAR_AGORA' })
+        .then((resposta) => {
+          setSemPermissaoDeHost(Boolean(resposta?.semPermissao));
+          return carregarDados();
+        })
         .catch(() => {});
     }
   }, []);
@@ -186,7 +191,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     const inicio = Date.now();
     try {
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-        await chrome.runtime.sendMessage({ tipo: 'VERIFICAR_AGORA' });
+        const resposta = await chrome.runtime.sendMessage<
+          { tipo: string },
+          ResultadoVerificacaoSei
+        >({ tipo: 'VERIFICAR_AGORA' });
+        setSemPermissaoDeHost(Boolean(resposta?.semPermissao));
       }
       await carregarDados();
     } catch (erro) {
@@ -258,6 +267,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     let avisoPermissao: string | null = null;
     if (configAtualizada.urlControle) {
       const concedida = await solicitarPermissaoParaUrl(configAtualizada.urlControle);
+      setSemPermissaoDeHost(!concedida);
       if (!concedida) {
         avisoPermissao =
           'Sem problema: configurações salvas. Sem essa permissão, o Radar sincroniza normalmente sempre que houver uma aba do SEI aberta.';
@@ -801,6 +811,18 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
           </span>
           <button className="btn-banner-action" onClick={handleVerificarAgora}>
             Reconectar
+          </button>
+        </div>
+      )}
+
+      {semPermissaoDeHost && !exibindoConfig && (
+        <div className="connection-banner warning">
+          <span className="banner-message">
+            <AlertTriangle size={15} aria-hidden="true" />
+            Sem aba do SEI aberta e sem permissão para verificar em segundo plano.
+          </span>
+          <button className="btn-banner-action" onClick={() => setExibindoConfig(true)}>
+            Conceder Acesso
           </button>
         </div>
       )}

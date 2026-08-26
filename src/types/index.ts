@@ -79,6 +79,14 @@ export type MensagemRuntime =
   | { tipo: 'LIMPAR_PROCESSOS' }
   | { tipo: 'PARSEAR_HTML_SEI'; html: string; urlBase: string };
 
+export interface ResultadoVerificacaoSei {
+  sucesso: boolean;
+  novos: number;
+  total: number;
+  mensagem?: string;
+  semPermissao?: boolean;
+}
+
 export interface ResultadoParseHtmlSei {
   processos: ProcessoSei[];
   usuarioLogado: string | null;
