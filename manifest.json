@@ -44,9 +44,21 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*/*sei*",
-        "*://*/*controlador.php*",
-        "*://*/*acao=procedimento_*"
+        "*://*.gov.br/*sei*",
+        "*://*.gov.br/*controlador.php*",
+        "*://*.gov.br/*acao=procedimento_*",
+        "*://*.jus.br/*sei*",
+        "*://*.jus.br/*controlador.php*",
+        "*://*.jus.br/*acao=procedimento_*",
+        "*://*.leg.br/*sei*",
+        "*://*.leg.br/*controlador.php*",
+        "*://*.leg.br/*acao=procedimento_*",
+        "*://*.mp.br/*sei*",
+        "*://*.mp.br/*controlador.php*",
+        "*://*.mp.br/*acao=procedimento_*",
+        "*://*.def.br/*sei*",
+        "*://*.def.br/*controlador.php*",
+        "*://*.def.br/*acao=procedimento_*"
       ],
       "js": [
         "assets/content.js"

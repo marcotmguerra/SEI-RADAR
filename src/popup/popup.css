@@ -423,13 +423,6 @@ a:focus-visible {
   color: var(--cor-texto-fraco);
 }
 
-.filters-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--espaco-2);
-  font-size: 12px;
-}
 
 .filter-pills,
 .period-pills,
@@ -484,19 +477,6 @@ a:focus-visible {
   border-color: var(--cor-borda);
 }
 
-.btn-mark-all {
-  min-height: 36px;
-  padding: var(--espaco-1) 0;
-  color: var(--cor-petroleo);
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.btn-mark-all:hover,
 .btn-read-toggle:hover {
   color: var(--cor-petroleo-hover);
   text-decoration: underline;
@@ -653,6 +633,179 @@ a:focus-visible {
   line-height: 1.4;
   user-select: text;
 }
+
+/* Prazo (retorno programado) no card: só ícone e texto, sem preenchimento */
+.badge-prazo {
+  display: inline-flex;
+  align-items: center;
+  color: var(--cor-perigo);
+  background: transparent;
+  border: 0;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Barra de filtros compacta: pills de situação em linha única + selects */
+.filter-pills {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.filter-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-pills .filter-pill {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.pill-count {
+  margin-left: 3px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-pill.active .pill-count {
+  opacity: 0.85;
+}
+
+.filters-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+}
+
+.filter-select {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 var(--espaco-2);
+  color: var(--cor-texto);
+  background-color: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-pequeno);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.filter-select:hover {
+  border-color: var(--cor-primaria);
+}
+
+.filters-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--espaco-1);
+}
+
+.btn-icon-acao {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0 var(--espaco-1);
+  color: var(--cor-texto-fraco);
+  background: transparent;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-pequeno);
+  cursor: pointer;
+}
+
+.btn-icon-acao:hover:not(:disabled) {
+  color: var(--cor-primaria);
+  border-color: var(--cor-primaria);
+  background-color: var(--cor-fundo-suave);
+}
+
+.btn-icon-acao:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.btn-icon-badge {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bloco de andamento do processo */
+.andamento-box {
+  margin-top: var(--espaco-2);
+  padding: var(--espaco-2) var(--espaco-3);
+  background-color: var(--cor-fundo-suave);
+  border-radius: var(--raio-pequeno);
+  cursor: default;
+  font-size: 11px;
+  user-select: text;
+}
+
+.andamento-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--espaco-2);
+  margin: 0;
+}
+
+.andamento-grid dt {
+  margin-bottom: 1px;
+  color: var(--cor-texto-fraco);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.andamento-grid dd {
+  margin: 0;
+  color: var(--cor-texto);
+  font-weight: 600;
+  word-break: break-word;
+}
+
+/* Descrições são longas: ocupam a largura toda em vez de espremer numa coluna */
+.andamento-grid-full {
+  grid-column: 1 / -1;
+}
+
+.andamento-grid-full dd {
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.andamento-status {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  color: var(--cor-texto-fraco);
+}
+
+.andamento-erro {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-2);
+  color: var(--cor-texto-fraco);
+}
+
+.andamento-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: var(--espaco-2);
+  color: var(--cor-primaria);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.andamento-link:hover {
+  text-decoration: underline;
+}
+
+
 
 .process-footer {
   margin-top: var(--espaco-1);

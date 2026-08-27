@@ -24,6 +24,33 @@ export const ehProcessoAtribuido = (
 };
 
 /**
+ * Verifica se um processo está confirmadamente sem atribuição.
+ *
+ * Só `null` conta: `undefined` significa que a leitura foi inconclusiva, e tratar
+ * isso como "sem atribuição" faria a secretaria trabalhar em cima de dado errado.
+ */
+export const ehSemAtribuicao = (processo: ProcessoSei): boolean =>
+  processo.atribuidoPara === null;
+
+/**
+ * Verifica se um processo está atribuído a alguém que não é o usuário configurado
+ */
+export const ehAtribuidoAOutraPessoa = (
+  processo: ProcessoSei,
+  usuarioSigla?: string | null
+): boolean => {
+  const atribuicao = processo.atribuidoPara;
+  if (typeof atribuicao !== 'string' || !atribuicao.trim()) return false;
+  return !ehProcessoAtribuido(processo, usuarioSigla);
+};
+
+/**
+ * Verifica se o processo tem prazo (retorno programado) sinalizado pelo SEI
+ */
+export const temPrazo = (processo: ProcessoSei): boolean =>
+  typeof processo.prazo === 'string' && processo.prazo.length > 0;
+
+/**
  * Verifica se um processo pertence ao escopo ativo do Radar pessoal
  */
 export const processoPertenceAoRadar = (

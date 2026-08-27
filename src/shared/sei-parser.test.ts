@@ -4,10 +4,16 @@ import {
   extrairTextoAssunto,
   resolverUrlAbsoluta,
   extrairAtribuicaoDaLinha,
+  localizarIndiceColunaAtribuicao,
+  extrairPrazoDaLinha,
   extrairMarcadoresDaLinha,
   extrairUsuarioLogado,
+  extrairUnidadeAtual,
   extrairTodosMarcadoresDaPagina,
 } from './sei-parser';
+
+const montarDoc = (html: string): Document =>
+  new DOMParser().parseFromString(html, 'text/html');
 
 describe('SEI Parser', () => {
   describe('extrairTextoAssunto', () => {
@@ -20,6 +26,17 @@ describe('SEI Parser', () => {
     it('extrai conteúdo de tooltips JavaScript do SEI', () => {
       const tooltip = "return infraTooltipMostrar('Assunto: Solicitação de diárias operacionais');";
       expect(extrairTextoAssunto(tooltip)).toBe('Solicitação de diárias operacionais');
+    });
+
+    it('extrai o assunto quando o primeiro argumento do tooltip vem vazio', () => {
+      // Padrão real do SEI, que fazia o JavaScript cru vazar como assunto
+      const tooltip = `return infraTooltipMostrar('','Pedidos, Oferecimentos e Informações Diversas');`;
+      expect(extrairTextoAssunto(tooltip)).toBe('Pedidos, Oferecimentos e Informações Diversas');
+    });
+
+    it('nunca devolve código JavaScript como assunto', () => {
+      expect(extrairTextoAssunto(`return infraTooltipMostrar('','');`)).toBeNull();
+      expect(extrairTextoAssunto('return algumaCoisa();')).toBeNull();
     });
 
     it('retorna null para valores vazios ou nulos', () => {
@@ -51,6 +68,123 @@ describe('SEI Parser', () => {
       const doc = parser.parseFromString('<table><tr><td><span title="Processo atribuído para GUERRA">👤</span></td></tr></table>', 'text/html');
       const tr = doc.querySelector('tr')!;
       expect(extrairAtribuicaoDaLinha(tr)).toBe('GUERRA');
+    });
+
+    it('devolve undefined quando não há nenhuma pista de atribuição na linha', () => {
+      const doc = montarDoc('<table><tr><td>1400.01.000098/2026-43</td><td>Aquisição</td></tr></table>');
+      const tr = doc.querySelector('tr')!;
+      expect(extrairAtribuicaoDaLinha(tr)).toBeUndefined();
+    });
+
+    it('devolve null quando a coluna de atribuição existe e está vazia', () => {
+      const doc = montarDoc(`
+        <table>
+          <tr><th>Processo</th><th>Atribuição</th></tr>
+          <tr><td>1400.01.000098/2026-43</td><td>   </td></tr>
+        </table>
+      `);
+      const tr = doc.querySelectorAll('tr')[1]!;
+      const indice = localizarIndiceColunaAtribuicao(doc.querySelector('table'));
+      expect(extrairAtribuicaoDaLinha(tr, indice)).toBeNull();
+    });
+
+    it('lê o responsável a partir da coluna de atribuição', () => {
+      const doc = montarDoc(`
+        <table>
+          <tr><th>Processo</th><th>Atribuição</th></tr>
+          <tr><td>1400.01.000098/2026-43</td><td>GUERRA</td></tr>
+        </table>
+      `);
+      const tr = doc.querySelectorAll('tr')[1]!;
+      const indice = localizarIndiceColunaAtribuicao(doc.querySelector('table'));
+      expect(extrairAtribuicaoDaLinha(tr, indice)).toBe('GUERRA');
+    });
+  });
+
+  describe('inferência de "sem atribuição" por tabela', () => {
+    const linha = (numero: string, extra: string) => `
+      <tr>
+        <td><a href="controlador.php?acao=procedimento_trabalhar&id_procedimento=${numero}"
+               title="Assunto: Teste">1400.01.00000${numero}/2026-01</a>${extra}</td>
+      </tr>`;
+
+    it('marca como sem atribuição quando outra linha da tabela tem atribuição', () => {
+      // Padrão da tela de Controle de Processos: sem cabeçalho "Atribuição",
+      // a sigla aparece ao lado do número
+      const html = `<table id="tblProcessosRecebidos">
+        ${linha('1', '<a class="ancoraSigla">05881659643</a>')}
+        ${linha('2', '')}
+      </table>`;
+
+      const processos = parseProcessosHtml(html);
+      expect(processos[0]?.atribuidoPara).toBe('05881659643');
+      expect(processos[1]?.atribuidoPara).toBeNull();
+    });
+
+    it('mantém indeterminado quando nenhuma linha da tabela expõe atribuição', () => {
+      const html = `<table id="tblProcessosRecebidos">
+        ${linha('1', '')}
+        ${linha('2', '')}
+      </table>`;
+
+      const processos = parseProcessosHtml(html);
+      expect(processos[0]?.atribuidoPara).toBeUndefined();
+      expect(processos[1]?.atribuidoPara).toBeUndefined();
+    });
+  });
+
+  describe('extrairPrazoDaLinha', () => {
+    it('lê o prazo do tooltip de retorno programado', () => {
+      const doc = montarDoc(
+        '<table><tr><td><img src="retorno_programado.gif" title="Retorno Programado em 30/08/2026"/></td></tr></table>'
+      );
+      const prazo = extrairPrazoDaLinha(doc.querySelector('tr')!);
+      expect(prazo?.texto).toBe('30/08/2026');
+      expect(new Date(prazo!.iso).getFullYear()).toBe(2026);
+    });
+
+    it('aceita a palavra "prazo" em célula de texto', () => {
+      const doc = montarDoc('<table><tr><td>Prazo: 05/09/2026</td></tr></table>');
+      expect(extrairPrazoDaLinha(doc.querySelector('tr')!)?.texto).toBe('05/09/2026');
+    });
+
+    it('ignora datas que não se referem a prazo', () => {
+      const doc = montarDoc('<table><tr><td title="Gerado em 01/01/2026">x</td></tr></table>');
+      expect(extrairPrazoDaLinha(doc.querySelector('tr')!)).toBeNull();
+    });
+  });
+
+  describe('localizarIndiceColunaAtribuicao', () => {
+    it('encontra a coluna pelo texto do cabeçalho', () => {
+      const doc = montarDoc(
+        '<table><tr><th>Processo</th><th>Atribuição</th><th>Tipo</th></tr></table>'
+      );
+      expect(localizarIndiceColunaAtribuicao(doc.querySelector('table'))).toBe(1);
+    });
+
+    it('devolve null quando a tabela não tem coluna de atribuição', () => {
+      const doc = montarDoc('<table><tr><th>Processo</th><th>Tipo</th></tr></table>');
+      expect(localizarIndiceColunaAtribuicao(doc.querySelector('table'))).toBeNull();
+      expect(localizarIndiceColunaAtribuicao(null)).toBeNull();
+    });
+  });
+
+  describe('extrairUnidadeAtual', () => {
+    it('extrai a unidade da opção marcada no seletor do SEI', () => {
+      const doc = montarDoc(
+        '<select id="selInfraUnidades"><option value="1">SEC</option><option value="2" selected>1ªCIA</option></select>'
+      );
+      expect(extrairUnidadeAtual(doc)).toBe('1ªCIA');
+    });
+
+    it('extrai a unidade de rótulo dedicado', () => {
+      const doc = montarDoc('<span id="lblInfraUnidade">2ºBPM</span>');
+      expect(extrairUnidadeAtual(doc)).toBe('2ºBPM');
+    });
+
+    it('devolve null quando a página não expõe unidade', () => {
+      expect(extrairUnidadeAtual(montarDoc('<div>sem unidade aqui</div>'))).toBeNull();
+      expect(extrairUnidadeAtual('')).toBeNull();
     });
   });
 
@@ -191,6 +325,8 @@ describe('SEI Parser', () => {
 
       expect(processos[1]?.numero).toBe('1400.01.000098/2026-43');
       expect(processos[1]?.assunto).toBe('Aquisição de EPI');
+      // A outra linha da mesma tabela teve a atribuição lida com sucesso, o que
+      // prova que o parser sabe lê-la ali: a ausência aqui é "sem atribuição"
       expect(processos[1]?.atribuidoPara).toBeNull();
       expect(processos[1]?.marcadores).toBeUndefined();
     });

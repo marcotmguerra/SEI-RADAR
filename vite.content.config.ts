@@ -11,7 +11,7 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/content/sei-enhancer.ts'),
       formats: ['iife'],
-      name: 'SeiNotifierContent',
+      name: 'SeiRadarContent',
       fileName: () => 'content.js',
     },
   },

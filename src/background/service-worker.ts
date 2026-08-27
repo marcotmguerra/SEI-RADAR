@@ -5,21 +5,40 @@ import {
   salvarStatusSessao,
   salvarConfiguracao,
   salvarMarcadoresDisponiveis,
+  salvarAndamentos,
+  limparAndamentos,
 } from '../shared/storage';
 import {
   processoPertenceAoRadar,
   filtrarProcessosPorRadar,
 } from '../shared/radar';
 import { possuiPermissaoParaUrl } from '../shared/permissoes';
+import { ehTelaDeLogin } from '../shared/sei-parser';
+import {
+  descreverFalhaAndamento,
+  extrairUrlsDeFramesNoTexto,
+  procurarAndamento,
+  resumirAndamento,
+} from '../shared/andamento-parser';
+import type { AnaliseAndamento } from '../shared/andamento-parser';
+import { executarEmFila } from '../shared/fila-requisicoes';
+import { lerHtmlDaResposta } from '../shared/http-sei';
 import type {
+  AndamentoProcesso,
   ConfiguracaoExtensao,
   DetalheMarcador,
   MensagemRuntime,
   ProcessoSei,
+  ReferenciaProcesso,
+  ResultadoBuscaAndamento,
   ResultadoParseHtmlSei,
   ResultadoVerificacaoSei,
+  ResumoAndamento,
   StatusSessao,
 } from '../types';
+
+/** O que o documento offscreen devolve ao analisar uma página de histórico */
+type AnaliseAndamentoRemota = AnaliseAndamento & { truncado: boolean };
 
 const NOME_ALARME = 'sei_alarme_verificacao';
 
@@ -87,7 +106,12 @@ const garantirDocumentoOffscreen = async (): Promise<boolean> => {
  * offscreen, já que o service worker não tem acesso a DOMParser
  */
 const interpretarHtmlSei = async (html: string, urlBase: string): Promise<ResultadoParseHtmlSei> => {
-  const vazio: ResultadoParseHtmlSei = { processos: [], usuarioLogado: null, marcadoresDisponiveis: [] };
+  const vazio: ResultadoParseHtmlSei = {
+    processos: [],
+    usuarioLogado: null,
+    unidadeAtual: null,
+    marcadoresDisponiveis: [],
+  };
 
   const disponivel = await garantirDocumentoOffscreen();
   if (!disponivel) return vazio;
@@ -310,7 +334,68 @@ const notificarMarcadorAtualizado = async (
 /**
  * Atualiza a lista de processos salvos e dispara notificações se houver novidades
  */
-const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
+/** Máximo de notificações individuais por ciclo; o excedente vira um único resumo */
+const LIMITE_NOTIFICACOES_POR_CICLO = 4;
+
+/**
+ * Emite notificação de resumo quando há mais itens do que o limite por ciclo.
+ * Evita que o usuário tenha que fechar dezenas de avisos na mão.
+ */
+const notificarResumo = async (titulo: string, mensagem: string, somAtivo: boolean) => {
+  if (typeof chrome === 'undefined' || !chrome.notifications) return;
+
+  try {
+    await chrome.notifications.create(`sei-resumo-${Date.now()}`, {
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icons/icon-128.png'),
+      title: titulo,
+      message: mensagem,
+      priority: 1,
+      silent: true,
+    });
+    if (somAtivo) await tocarAlertaSonoro();
+  } catch (erro) {
+    console.error('Erro ao emitir notificação de resumo:', erro);
+  }
+};
+
+/**
+ * Notifica no máximo `LIMITE_NOTIFICACOES_POR_CICLO` itens e resume o restante
+ */
+const notificarEmLote = async <T>(
+  itens: T[],
+  notificarItem: (item: T) => Promise<void>,
+  notificarRestantes: (restantes: number) => Promise<void>
+) => {
+  const individuais = itens.slice(0, LIMITE_NOTIFICACOES_POR_CICLO);
+  for (const item of individuais) {
+    await notificarItem(item);
+  }
+
+  const restantes = itens.length - individuais.length;
+  if (restantes > 0) {
+    await notificarRestantes(restantes);
+  }
+};
+
+/**
+ * Serializa o processamento de coletas.
+ *
+ * O content script empurra NOTIFICAR_PAGINA_SEI_CARREGADA a cada mutação da página,
+ * e o alarme também dispara verificações. Sem fila, duas execuções simultâneas fazem
+ * ler-modificar-gravar sobre o mesmo storage: uma lê a lista ainda vazia depois que a
+ * outra já marcou a primeira carga como concluída, e todo o histórico vira notificação.
+ */
+let filaProcessamento: Promise<unknown> = Promise.resolve();
+
+const emSerie = <R>(tarefa: () => Promise<R>): Promise<R> => {
+  const proxima = filaProcessamento.then(tarefa, tarefa);
+  // Mantém a corrente viva mesmo se esta tarefa falhar
+  filaProcessamento = proxima.catch(() => undefined);
+  return proxima;
+};
+
+const processarColeta = async (processosColetados: ProcessoSei[]) => {
   const config = await obterConfiguracao();
   const processosArmazenados = await obterProcessos();
   const mapaArmazenados = new Map(processosArmazenados.map((p) => [p.numero, p]));
@@ -355,7 +440,12 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
       detectadoEm: existente.detectadoEm,
       lido: marcadoresAlterados.length > 0 ? false : existente.lido,
       assunto: coletado.assunto || existente.assunto,
-      atribuidoPara: coletado.atribuidoPara || existente.atribuidoPara,
+      // `null` (desatribuído no SEI) precisa sobrescrever; só `undefined` (leitura
+      // inconclusiva) preserva o valor anterior
+      atribuidoPara:
+        coletado.atribuidoPara !== undefined ? coletado.atribuidoPara : existente.atribuidoPara,
+      prazo: coletado.prazo !== undefined ? coletado.prazo : existente.prazo,
+      prazoTexto: coletado.prazo !== undefined ? coletado.prazoTexto : existente.prazoTexto,
       marcadores: marcadoresFinais,
       ...(marcadoresAlterados.length > 0
         ? { atualizadoEm: agora, motivoAtualizacao: 'Marcador alterado' }
@@ -379,7 +469,18 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
     }
   }
 
-  const ehPrimeiraCarga = !config.primeiraCargaRealizada && processosArmazenados.length === 0;
+  // A primeira sincronização é apenas o retrato inicial do que já existia no SEI:
+  // ela nunca notifica. Só o que aparecer depois dela vira notificação.
+  //
+  // A checagem antiga também exigia que o armazenamento estivesse vazio, o que
+  // falhava quando uma coleta anterior já havia gravado algo — e aí a carga
+  // histórica inteira virava notificação de uma vez.
+  // Duas situações são "retrato inicial", e nenhuma delas notifica:
+  //  - a primeira carga ainda não foi feita;
+  //  - não havia nada guardado, então não existe passado com que comparar e
+  //    nada pode ser considerado novidade (caso de instalação nova, "Limpar"
+  //    e troca de escopo do Radar).
+  const ehPrimeiraCarga = !config.primeiraCargaRealizada || processosArmazenados.length === 0;
 
   await salvarProcessos(listaAtualizada);
   await salvarStatusSessao('conectado');
@@ -388,26 +489,46 @@ const processarNovosProcessos = async (processosColetados: ProcessoSei[]) => {
 
   if (ehPrimeiraCarga) {
     await salvarConfiguracao({ primeiraCargaRealizada: true });
-    // Na primeira carga histórica, NÃO dispara notificações desktop ("Os SEIs que já estavam não sobem")
     return { novos: 0, total: listaAtualizada.length };
   }
 
   if (config.notificacoesAtivas && processosComMarcadorAtualizado.length > 0) {
-    for (const { processo, alterados } of processosComMarcadorAtualizado) {
-      await notificarMarcadorAtualizado(processo, alterados, config.somAtivo);
-    }
+    await notificarEmLote(
+      processosComMarcadorAtualizado,
+      ({ processo, alterados }) => notificarMarcadorAtualizado(processo, alterados, config.somAtivo),
+      (restantes) =>
+        notificarResumo(
+          'Etiquetas atualizadas',
+          `Mais ${restantes} processos tiveram etiquetas alteradas.`,
+          config.somAtivo
+        )
+    );
   }
 
   if (config.notificacoesAtivas && novosProcessos.length > 0) {
     const processosParaNotificar = novosProcessos.filter((p) => deveNotificarProcesso(p, config));
 
-    for (const novo of processosParaNotificar) {
-      await notificarNovoProcesso(novo, config.somAtivo);
-    }
+    await notificarEmLote(
+      processosParaNotificar,
+      (novo) => notificarNovoProcesso(novo, config.somAtivo),
+      (restantes) =>
+        notificarResumo(
+          'Novos processos no Radar',
+          `Mais ${restantes} processos novos chegaram. Abra o Radar para ver a lista.`,
+          config.somAtivo
+        )
+    );
   }
 
   return { novos: novosProcessos.length, total: listaAtualizada.length };
 };
+
+/**
+ * Processa uma coleta do SEI, garantindo que apenas uma execução ocorra por vez
+ */
+const processarNovosProcessos = (
+  processosColetados: ProcessoSei[]
+): Promise<{ novos: number; total: number }> => emSerie(() => processarColeta(processosColetados));
 
 /**
  * Executa a checagem no SEI:
@@ -437,6 +558,7 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
             processos: ProcessoSei[];
             urlAtual?: string;
             usuarioLogado?: string;
+            unidadeAtual?: string;
             marcadoresDisponiveis?: string[];
           }>(aba.id, { tipo: 'EXTRAIR_DOM_SEI' });
 
@@ -508,7 +630,7 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
       return { sucesso: false, novos: 0, total: 0, mensagem: `HTTP ${resposta.status}` };
     }
 
-    const html = await resposta.text();
+    const html = await lerHtmlDaResposta(resposta);
 
     // Verifica se caiu em tela de login
     const isLogin =
@@ -562,6 +684,173 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
       mensagem: erro?.message || 'Falha de conexão com o SEI',
     };
   }
+};
+
+/**
+ * Consulta o andamento de uma lista de processos.
+ *
+ * 1. Caminho preferencial: delega a uma aba do SEI aberta, onde o content script faz
+ *    requisições de mesma origem sem exigir permissão de host.
+ * 2. Sem aba aberta, faz as requisições daqui, o que depende da permissão opcional
+ *    de host concedida pelo usuário, e interpreta o HTML no documento offscreen.
+ */
+export const buscarAndamentos = async (
+  referencias: ReferenciaProcesso[]
+): Promise<ResultadoBuscaAndamento> => {
+  if (!Array.isArray(referencias) || referencias.length === 0) {
+    return { sucesso: true, andamentos: [] };
+  }
+
+  const config = await obterConfiguracao();
+
+  // 1. Tenta via aba aberta do SEI
+  if (typeof chrome !== 'undefined' && chrome.tabs) {
+    try {
+      const abas = await chrome.tabs.query({});
+      const abasSei = abas.filter(
+        (a) => a.id && a.url && (a.url.includes('sei') || a.url.includes('controlador.php'))
+      );
+
+      for (const aba of abasSei) {
+        if (!aba.id) continue;
+        try {
+          const resposta = await chrome.tabs.sendMessage<MensagemRuntime, ResultadoBuscaAndamento>(
+            aba.id,
+            { tipo: 'BUSCAR_ANDAMENTO', processos: referencias }
+          );
+          if (resposta?.sucesso && Array.isArray(resposta.andamentos)) {
+            await salvarAndamentos(resposta.andamentos);
+            return resposta;
+          }
+        } catch {
+          // Aba sem content script ativo; tenta a próxima
+        }
+      }
+    } catch (erro) {
+      console.debug('Erro ao consultar abas para andamento:', erro);
+    }
+  }
+
+  // 2. Requisição direta, dependente da permissão opcional de host
+  const temPermissao = await possuiPermissaoParaUrl(config.urlControle);
+  if (!temPermissao) {
+    return {
+      sucesso: false,
+      andamentos: [],
+      semPermissao: true,
+      mensagem:
+        'Para consultar o andamento sem aba do SEI aberta, conceda acesso à URL do SEI nas configurações. Como alternativa, mantenha uma aba do SEI aberta.',
+    };
+  }
+
+  const disponivel = await garantirDocumentoOffscreen();
+  if (!disponivel) {
+    return { sucesso: false, andamentos: [], mensagem: 'Não foi possível interpretar o andamento.' };
+  }
+
+  const baixar = async (url: string): Promise<string> => {
+    const resposta = await fetch(url, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'text/html,application/xhtml+xml,application/xml' },
+    });
+    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
+    // O SEI responde em ISO-8859-1; text() corromperia os acentos
+    return lerHtmlDaResposta(resposta);
+  };
+
+  const resultados = await executarEmFila(
+    referencias,
+    async (referencia): Promise<AndamentoProcesso> => {
+      const base: AndamentoProcesso = {
+        numero: referencia.numero,
+        unidadeGeradora: null,
+        enviadoPorUnidade: null,
+        dataEnvio: null,
+        atualizadoEmSei: null,
+        linhas: [],
+        coletadoEm: new Date().toISOString(),
+      };
+
+      // Mesma travessia do content script: desce pelos frames e segue o link do
+      // histórico. A diferença é só o parse, que aqui vai para o documento
+      // offscreen, já que o service worker não tem DOMParser.
+      // Cada página é analisada uma vez só: `procurarAndamento` pede as linhas e,
+      // quando não vêm, o diagnóstico do mesmo HTML. Repetir a ida ao documento
+      // offscreen seria trabalho puro.
+      let ultima: { html: string; analise: AnaliseAndamentoRemota } | null = null;
+
+      // Guardado à parte porque só a página que de fato trouxe a tabela diz se o
+      // histórico veio cortado — e é isso que impede afirmar uma unidade geradora errada
+      const tabelaLida = { truncado: false };
+
+      const analisarViaOffscreen = async (html: string): Promise<AnaliseAndamentoRemota> => {
+        if (ultima?.html === html) return ultima.analise;
+
+        const resposta = await chrome.runtime.sendMessage<MensagemRuntime, AnaliseAndamentoRemota>({
+          tipo: 'PARSEAR_ANDAMENTO_HTML',
+          html,
+          urlBase: referencia.link,
+        });
+
+        const analise: AnaliseAndamentoRemota = {
+          linhas: Array.isArray(resposta?.linhas) ? resposta.linhas : [],
+          tabelaEncontrada: Boolean(resposta?.tabelaEncontrada),
+          linhasBrutas: Number(resposta?.linhasBrutas) || 0,
+          tabelas: Number(resposta?.tabelas) || 0,
+          truncado: Boolean(resposta?.truncado),
+        };
+
+        ultima = { html, analise };
+        if (analise.linhas.length > 0) tabelaLida.truncado = analise.truncado;
+        return analise;
+      };
+
+      const busca = await procurarAndamento(referencia.link, {
+        baixar,
+        extrairFrames: extrairUrlsDeFramesNoTexto,
+        ehLogin: ehTelaDeLogin,
+        parsearLinhas: async (html) => (await analisarViaOffscreen(html)).linhas,
+        analisar: analisarViaOffscreen,
+      });
+
+      if (busca.sessaoExpirada) {
+        return { ...base, erro: 'Sessão do SEI expirada. Faça login novamente.' };
+      }
+
+      if (busca.linhas.length === 0) {
+        return {
+          ...base,
+          ...(busca.linkTentado ? { linkAndamento: busca.linkTentado } : {}),
+          erro: descreverFalhaAndamento(busca),
+        };
+      }
+
+      return {
+        ...base,
+        ...resumirAndamento(busca.linhas, undefined, tabelaLida.truncado),
+        ...(busca.linkAndamento ? { linkAndamento: busca.linkAndamento } : {}),
+      };
+    },
+    { concorrencia: 2, intervaloMs: 400, timeoutMs: 15000 }
+  );
+
+  const andamentos = resultados.map(
+    ({ item, resultado, erro }) =>
+      resultado ?? {
+        numero: item.numero,
+        unidadeGeradora: null,
+        enviadoPorUnidade: null,
+        dataEnvio: null,
+        atualizadoEmSei: null,
+        linhas: [],
+        coletadoEm: new Date().toISOString(),
+        erro: erro || 'Falha ao consultar o andamento.',
+      }
+  );
+
+  await salvarAndamentos(andamentos);
+  return { sucesso: true, andamentos };
 };
 
 /**
@@ -670,14 +959,20 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
               JSON.stringify(novaConfig.marcadoresRadar || []);
 
           if (escopoMudou) {
-            // Remove do armazenamento local os processos que deixaram de pertencer ao novo radar
-            const processosAtuais = await obterProcessos();
-            const filtrados = filtrarProcessosPorRadar(processosAtuais, novaConfig);
-            await salvarProcessos(filtrados);
-            await atualizarBadge(filtrados, 'conectado');
+            // Tudo em série e com o silêncio marcado ANTES de mexer na lista: o content
+            // script empurra coletas a qualquer momento, e uma que chegasse entre o
+            // esvaziamento da lista e a marcação veria "lista vazia + carga já feita",
+            // tratando todo o histórico do novo escopo como novidade.
+            await emSerie(async () => {
+              await salvarConfiguracao({ primeiraCargaRealizada: false });
 
-            // Silencia a próxima sincronização para não disparar notificações de processos históricos
-            await salvarConfiguracao({ primeiraCargaRealizada: false });
+              // Remove do armazenamento local os processos que deixaram de pertencer ao novo radar
+              const processosAtuais = await obterProcessos();
+              const filtrados = filtrarProcessosPorRadar(processosAtuais, novaConfig);
+              await salvarProcessos(filtrados);
+              await atualizarBadge(filtrados, 'conectado');
+            });
+
             await executarVerificacaoSei();
           }
 
@@ -722,8 +1017,22 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
           // com a resposta real do documento offscreen.
           break;
         }
+        case 'BUSCAR_ANDAMENTO': {
+          const resultado = await buscarAndamentos(mensagem.processos || []);
+          sendResponse(resultado);
+          break;
+        }
+
+        case 'PARSEAR_ANDAMENTO_HTML': {
+          // Tratada exclusivamente pelo documento offscreen (depende de DOMParser).
+          // O service worker recebe o eco da própria mensagem e não deve responder,
+          // sob risco de competir com a resposta real.
+          break;
+        }
+
         case 'LIMPAR_PROCESSOS': {
           await salvarProcessos([]);
+          await limparAndamentos();
           await atualizarBadge([], 'conectado');
           // Evita que a próxima sincronização notifique o histórico recoletado
           await salvarConfiguracao({ primeiraCargaRealizada: false });

@@ -2,8 +2,10 @@ import type { MensagemRuntime } from '../types';
 import {
   parseProcessosHtml,
   extrairUsuarioLogado,
+  extrairUnidadeAtual,
   extrairTodosMarcadoresDaPagina,
 } from '../shared/sei-parser';
+import { analisarAndamentoHtml, historicoEstaTruncado } from '../shared/andamento-parser';
 
 /**
  * Documento offscreen: única forma de tocar áudio e de usar DOMParser a partir
@@ -40,7 +42,19 @@ chrome.runtime.onMessage.addListener((mensagem: MensagemRuntime, _sender, sendRe
     sendResponse({
       processos: parseProcessosHtml(mensagem.html, mensagem.urlBase),
       usuarioLogado: extrairUsuarioLogado(mensagem.html),
+      unidadeAtual: extrairUnidadeAtual(mensagem.html),
       marcadoresDisponiveis: extrairTodosMarcadoresDaPagina(mensagem.html),
+    });
+    return;
+  }
+
+  if (mensagem.tipo === 'PARSEAR_ANDAMENTO_HTML') {
+    // Entrega a análise crua: quem pediu é que decide resumir. Devolver o resumo
+    // pronto daqui já cortava as linhas antigas, e é justamente a mais antiga que
+    // identifica a unidade geradora.
+    sendResponse({
+      ...analisarAndamentoHtml(mensagem.html),
+      truncado: historicoEstaTruncado(mensagem.html),
     });
   }
 });

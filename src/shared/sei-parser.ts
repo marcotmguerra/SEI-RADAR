@@ -17,14 +17,33 @@ export const extrairTextoAssunto = (textoBruto: string | null | undefined): stri
   // Remove prefixos comuns de tooltips do SEI (ex: "Assunto:", "Especificação:", "Tipo do Processo:")
   texto = texto.replace(/^(?:assunto|especifica[çc][ãa]o|tipo do processo|descri[çc][ãa]o)\s*:\s*/iu, '');
 
-  // Remove trechos JavaScript de tooltips como infraTooltipMostrar('...')
-  const matchTooltip = texto.match(/infraTooltipMostrar\s*\(\s*['"]([^'"]+)['"]/iu);
-  if (matchTooltip?.[1]) {
-    texto = matchTooltip[1].replace(/^(?:assunto|especifica[çc][ãa]o|tipo do processo)\s*:\s*/iu, '');
+  // Extrai o conteúdo de tooltips JavaScript do SEI (infraTooltipMostrar).
+  //
+  // É comum o SEI emitir o primeiro argumento vazio, como em
+  // infraTooltipMostrar('','Pedidos, Oferecimentos e Informações Diversas') —
+  // por isso a leitura precisa percorrer os argumentos e pegar o primeiro que
+  // tenha conteúdo, em vez de assumir que o assunto está no primeiro deles.
+  if (texto.includes('infraTooltipMostrar')) {
+    const args = extrairArgsInfraTooltip(texto);
+    const primeiroComConteudo = args.find((arg) => arg.trim().length > 0);
+    if (!primeiroComConteudo) return null;
+    texto = primeiroComConteudo.replace(
+      /^(?:assunto|especifica[çc][ãa]o|tipo do processo)\s*:\s*/iu,
+      ''
+    );
   }
 
-  // Remove quebras de linha excessivas e espaços duplicados
-  texto = texto.replace(/\s+/g, ' ').trim();
+  // Remove tags HTML e normaliza espaços
+  texto = texto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Nunca devolve código: se sobrou JavaScript, é melhor não ter assunto
+  if (
+    texto.includes('infraTooltipMostrar') ||
+    texto.includes('javascript:') ||
+    /^return\b/iu.test(texto)
+  ) {
+    return null;
+  }
 
   return texto.length > 0 ? texto : null;
 };
@@ -42,9 +61,67 @@ export const resolverUrlAbsoluta = (linkRelativo: string, urlBase: string): stri
 };
 
 /**
- * Extrai o usuário atribuído a partir de uma linha da tabela do SEI
+ * Localiza o índice da coluna "Atribuição" a partir do cabeçalho da tabela do SEI.
+ *
+ * Saber o índice é o que permite diferenciar "célula lida e vazia" (sem atribuição)
+ * de "não foi possível ler" — distinção da qual o filtro "Sem atribuição" depende.
  */
-export const extrairAtribuicaoDaLinha = (tr: Element): string | null => {
+export const localizarIndiceColunaAtribuicao = (tabela: Element | null): number | null => {
+  if (!tabela) return null;
+
+  // O SEI nem sempre usa <th>; quando não usa, a primeira linha faz papel de cabeçalho
+  const linhaCabecalho = tabela.querySelector('thead tr') || tabela.querySelector('tr');
+  if (!linhaCabecalho) return null;
+
+  const celulas = linhaCabecalho.querySelectorAll('th, td');
+  for (let i = 0; i < celulas.length; i++) {
+    const texto = celulas[i]?.textContent?.trim() || '';
+    if (/atribui/iu.test(texto)) {
+      return i;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Lê a célula de atribuição pelo índice de coluna conhecido.
+ * Devolve `null` quando a célula existe e está vazia (sem atribuição confirmada)
+ * e `undefined` quando a célula não pôde ser lida com confiança.
+ */
+const lerAtribuicaoPorColuna = (tr: Element, indiceColuna: number): string | null | undefined => {
+  const celulas = tr.querySelectorAll(':scope > td');
+  const celula = celulas[indiceColuna];
+  if (!celula) return undefined;
+
+  const texto = (celula.textContent || '').replace(/\s+/g, ' ').trim();
+
+  // Célula lida e vazia (ou apenas com traço de "vazio" do SEI) = sem atribuição
+  if (!texto || /^[-–—.\s]+$/u.test(texto)) return null;
+
+  // Número de processo na célula indica que o índice não corresponde à atribuição
+  if (REGEX_NUMERO_PROCESSO.test(texto)) return undefined;
+
+  return texto.length >= 2 ? texto : null;
+};
+
+/**
+ * Extrai o usuário atribuído a partir de uma linha da tabela do SEI.
+ *
+ * Retorna `string` quando atribuído, `null` quando a coluna foi lida e está vazia,
+ * e `undefined` quando não foi possível determinar.
+ */
+export const extrairAtribuicaoDaLinha = (
+  tr: Element,
+  indiceColuna?: number | null
+): string | null | undefined => {
+  // 0. Caminho preferencial: coluna "Atribuição" localizada pelo cabeçalho.
+  // Só cai para as heurísticas quando a leitura por coluna é inconclusiva.
+  if (typeof indiceColuna === 'number' && indiceColuna >= 0) {
+    const daColuna = lerAtribuicaoPorColuna(tr, indiceColuna);
+    if (daColuna !== undefined) return daColuna;
+  }
+
   // 1. Elementos com classe ancoraSigla ou similar (padrão nativo do SEI)
   const ancoraSigla = tr.querySelector('a.ancoraSigla, span.ancoraSigla, .ancoraSigla, a[class*="Sigla"], span[class*="Sigla"]');
   if (ancoraSigla) {
@@ -76,7 +153,8 @@ export const extrairAtribuicaoDaLinha = (tr: Element): string | null => {
     }
   }
 
-  return null;
+  // Nenhuma pista encontrada: indeterminado, e não "sem atribuição"
+  return undefined;
 };
 
 /**
@@ -433,6 +511,153 @@ export const extrairUsuarioLogado = (htmlOuDoc: string | Document): string | nul
 };
 
 /**
+ * Extrai a sigla da unidade ativa do usuário na interface do SEI.
+ *
+ * É essa sigla que permite identificar, na tabela de andamento, qual dos envios
+ * fez o processo chegar até a unidade do usuário.
+ */
+export const extrairUnidadeAtual = (htmlOuDoc: string | Document): string | null => {
+  let doc: Document;
+  if (typeof htmlOuDoc === 'string') {
+    if (!htmlOuDoc) return null;
+    const parser = new DOMParser();
+    doc = parser.parseFromString(htmlOuDoc, 'text/html');
+  } else {
+    doc = htmlOuDoc;
+  }
+
+  const limpar = (bruto: string | null | undefined): string | null => {
+    if (!bruto) return null;
+    const texto = bruto.replace(/\s+/g, ' ').trim();
+    if (texto.length < 2 || texto.length > 60) return null;
+    const minusculo = texto.toLowerCase();
+    if (minusculo === 'unidade' || minusculo.startsWith('selecione')) return null;
+    return texto;
+  };
+
+  // 1. Seletor de unidades do SEI: a opção marcada é a unidade ativa
+  const select = doc.querySelector<HTMLSelectElement>('#selInfraUnidades, select[id*="Unidade" i]');
+  if (select) {
+    const opcaoMarcada =
+      select.querySelector('option[selected]') ||
+      (select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null);
+    const daOpcao = limpar(opcaoMarcada?.textContent);
+    if (daOpcao) return daOpcao;
+  }
+
+  // 2. Rótulos que o SEI usa para exibir a unidade corrente
+  for (const seletor of ['#lblInfraUnidade', '#spanInfraUnidade', '.infraSiglaUnidade']) {
+    const daEtiqueta = limpar(doc.querySelector(seletor)?.textContent);
+    if (daEtiqueta) return daEtiqueta;
+  }
+
+  // 3. Varredura textual na barra do sistema
+  const barra = doc.querySelector('#divInfraBarraSistema, #divInfraBarraLocalizacao, #infraBarraComandosSuperior');
+  const matchBarra = (barra?.textContent || '').match(/Unidade\s*:?\s*([A-Za-zÀ-ÿ0-9ºª._\-/]+)/iu);
+  return limpar(matchBarra?.[1]);
+};
+
+/**
+ * Indica se o HTML corresponde à tela de login ou a uma sessão expirada do SEI.
+ * Centraliza a checagem que antes estava duplicada no parser e no service worker.
+ */
+export const ehTelaDeLogin = (html: string): boolean => {
+  if (!html || typeof html !== 'string') return false;
+  return (
+    html.includes('txtUsuario') ||
+    html.includes('txtSenha') ||
+    html.includes('formLogin') ||
+    html.includes('Sessão finalizada') ||
+    html.includes('Informe seu usuário e senha')
+  );
+};
+
+/**
+ * Converte "dd/mm/aaaa[ hh:mm[:ss]]" (formato do SEI) para ISO 8601.
+ * A data do SEI vem sem fuso explícito, então é interpretada como horário local.
+ */
+export const parsearDataHoraSei = (texto: string | null | undefined): string | null => {
+  if (!texto) return null;
+
+  const match = texto
+    .replace(/\s+/g, ' ')
+    .trim()
+    .match(/(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/u);
+
+  if (!match) return null;
+
+  const [, dia, mes, ano, hora, minuto, segundo] = match;
+  const data = new Date(
+    Number(ano),
+    Number(mes) - 1,
+    Number(dia),
+    Number(hora ?? 0),
+    Number(minuto ?? 0),
+    Number(segundo ?? 0)
+  );
+
+  if (Number.isNaN(data.getTime())) return null;
+
+  // Rejeita datas absurdas, típicas de leitura equivocada de outra coluna
+  if (data.getFullYear() < 1990 || data.getFullYear() > 2200) return null;
+
+  return data.toISOString();
+};
+
+export interface PrazoProcesso {
+  iso: string;
+  texto: string;
+}
+
+const REGEX_DATA_BR = /(\d{2}\/\d{2}\/\d{4})/u;
+const REGEX_MENCAO_PRAZO = /prazo|retorno\s+programado|sobrestad/iu;
+
+/**
+ * Extrai o prazo (retorno programado) de uma linha da tabela do SEI.
+ *
+ * O SEI sinaliza prazo com um ícone cujo title/tooltip traz a data, por exemplo
+ * "Retorno Programado em 30/08/2026". A varredura é tolerante porque a marcação
+ * varia entre versões: procura qualquer texto da linha que cite prazo/retorno e
+ * contenha uma data.
+ */
+export const extrairPrazoDaLinha = (tr: Element): PrazoProcesso | null => {
+  const candidatos: (string | null)[] = [];
+
+  for (const el of tr.querySelectorAll('[title], [onmouseover], [alt], img')) {
+    candidatos.push(
+      el.getAttribute('title'),
+      el.getAttribute('onmouseover'),
+      el.getAttribute('alt')
+    );
+
+    // Ícones costumam nomear a ação no próprio arquivo (retorno_programado.gif)
+    const src = el.getAttribute('src');
+    if (src && REGEX_MENCAO_PRAZO.test(src)) {
+      candidatos.push(el.getAttribute('title'), el.getAttribute('alt'), el.textContent);
+    }
+  }
+
+  // Células com o prazo em texto puro, quando a tabela tem coluna própria
+  for (const td of tr.querySelectorAll('td')) {
+    candidatos.push(td.textContent);
+  }
+
+  for (const bruto of candidatos) {
+    if (!bruto) continue;
+    const texto = bruto.replace(/\s+/g, ' ').trim();
+    if (!REGEX_MENCAO_PRAZO.test(texto)) continue;
+
+    const data = texto.match(REGEX_DATA_BR)?.[1];
+    if (!data) continue;
+
+    const iso = parsearDataHoraSei(data);
+    if (iso) return { iso, texto: data };
+  }
+
+  return null;
+};
+
+/**
  * Extrai o assunto a partir de um elemento de linha (TR) ou link do SEI
  */
 const extrairAssuntoDaLinha = (tr: Element, linkEl: Element): string | null => {
@@ -487,13 +712,7 @@ export const parseProcessosHtml = (
   if (!html || typeof html !== 'string') return [];
 
   // Se o HTML indicar tela de login/expiração de sessão
-  if (
-    html.includes('txtUsuario') ||
-    html.includes('txtSenha') ||
-    html.includes('formLogin') ||
-    html.includes('Sessão finalizada') ||
-    html.includes('Informe seu usuário e senha')
-  ) {
+  if (ehTelaDeLogin(html)) {
     return [];
   }
 
@@ -501,7 +720,20 @@ export const parseProcessosHtml = (
   const doc = parser.parseFromString(html, 'text/html');
 
   const processosMap = new Map<string, ProcessoSei>();
+  const tabelaPorNumero = new Map<string, Element | null>();
   const agora = new Date().toISOString();
+
+  // O índice da coluna "Atribuição" é resolvido uma única vez por tabela e
+  // reaproveitado em todas as linhas dela
+  const indicePorTabela = new Map<Element, number | null>();
+  const obterIndiceAtribuicao = (tr: Element): number | null => {
+    const tabela = tr.closest('table');
+    if (!tabela) return null;
+    if (!indicePorTabela.has(tabela)) {
+      indicePorTabela.set(tabela, localizarIndiceColunaAtribuicao(tabela));
+    }
+    return indicePorTabela.get(tabela) ?? null;
+  };
 
   // Seleciona links que abrem processos no SEI
   const linksProcessos = doc.querySelectorAll<HTMLAnchorElement>(
@@ -521,13 +753,17 @@ export const parseProcessosHtml = (
     const linkCompleto = resolverUrlAbsoluta(href, urlBase);
 
     let assunto: string | null = null;
-    let atribuidoPara: string | null = null;
+    let atribuidoPara: string | null | undefined;
     let marcadores: DetalheMarcador[] = [];
+
+    let prazo: PrazoProcesso | null = null;
 
     if (tr) {
       assunto = extrairAssuntoDaLinha(tr, link);
-      atribuidoPara = extrairAtribuicaoDaLinha(tr);
+      atribuidoPara = extrairAtribuicaoDaLinha(tr, obterIndiceAtribuicao(tr));
       marcadores = extrairMarcadoresDaLinha(tr);
+      prazo = extrairPrazoDaLinha(tr);
+      tabelaPorNumero.set(numero, tr.closest('table'));
     } else {
       assunto = extrairTextoAssunto(link.getAttribute('title'));
     }
@@ -540,7 +776,31 @@ export const parseProcessosHtml = (
       lido: false,
       atribuidoPara,
       marcadores: marcadores.length > 0 ? marcadores : undefined,
+      ...(prazo ? { prazo: prazo.iso, prazoTexto: prazo.texto } : {}),
     });
+  }
+
+  // Se o parser conseguiu ler a atribuição de alguma linha da tabela, ele sabe lê-la
+  // ali — então a ausência de marca nas demais linhas significa "sem atribuição", e
+  // não "não consegui determinar".
+  //
+  // Sem isso, a tela de Controle de Processos (que não tem cabeçalho "Atribuição",
+  // só a sigla ao lado do número) deixava todo mundo como indeterminado, e o filtro
+  // "Sem atribuição" ficava permanentemente zerado.
+  const tabelasComLeituraConfiavel = new Set<Element>();
+  for (const [numero, processo] of processosMap) {
+    const tabela = tabelaPorNumero.get(numero);
+    if (tabela && typeof processo.atribuidoPara === 'string') {
+      tabelasComLeituraConfiavel.add(tabela);
+    }
+  }
+
+  for (const [numero, processo] of processosMap) {
+    if (processo.atribuidoPara !== undefined) continue;
+    const tabela = tabelaPorNumero.get(numero);
+    if (tabela && tabelasComLeituraConfiavel.has(tabela)) {
+      processosMap.set(numero, { ...processo, atribuidoPara: null });
+    }
   }
 
   return Array.from(processosMap.values());

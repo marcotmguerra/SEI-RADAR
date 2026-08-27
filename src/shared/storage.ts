@@ -1,8 +1,11 @@
 import {
+  type AndamentoProcesso,
   type ConfiguracaoExtensao,
+  type FiltrosUi,
   type ProcessoSei,
   type StatusSessao,
   CONFIGURACAO_PADRAO,
+  FILTROS_UI_PADRAO,
 } from '../types';
 
 const CHAVE_CONFIGURACAO = 'sei_monitor_configuracao';
@@ -10,6 +13,24 @@ const CHAVE_PROCESSOS = 'sei_monitor_processos';
 const CHAVE_STATUS = 'sei_monitor_status';
 const CHAVE_ULTIMA_VERIFICACAO = 'sei_monitor_ultima_verificacao';
 const CHAVE_MARCADORES_DISPONIVEIS = 'sei_monitor_marcadores_disponiveis';
+const CHAVE_ANDAMENTOS = 'sei_monitor_andamentos';
+const CHAVE_FILTROS_UI = 'sei_monitor_filtros_ui';
+
+/** Tempo após o qual um andamento em cache é considerado velho */
+export const VALIDADE_ANDAMENTO_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Validade de uma consulta que falhou.
+ *
+ * Falha não é resultado: guardá-la pelas mesmas 6 horas de um sucesso congela o
+ * erro na tela e impede qualquer nova tentativa — inclusive depois de a extensão
+ * ter sido corrigida. Poucos minutos evitam martelar o SEI e, ainda assim,
+ * deixam o usuário tentar de novo.
+ */
+export const VALIDADE_ERRO_MS = 2 * 60 * 1000;
+
+/** Teto de andamentos guardados; os mais antigos são descartados */
+const LIMITE_ANDAMENTOS = 500;
 
 // Fallback em memória para ambiente de testes ou desenvolvimento fora do Chrome
 const memoriaLocal = new Map<string, any>();
@@ -170,6 +191,76 @@ export const marcarTodosProcessosComoLidos = async (): Promise<ProcessoSei[]> =>
 
 export const limparProcessos = async (): Promise<void> => {
   await salvarProcessos([]);
+};
+
+export const obterAndamentos = async (): Promise<Record<string, AndamentoProcesso>> => {
+  const arm = obterArmazenamento();
+  const dados = await arm.get(CHAVE_ANDAMENTOS);
+  return dados && typeof dados === 'object' ? dados : {};
+};
+
+/**
+ * Indica se um andamento em cache ainda pode ser exibido sem nova consulta ao SEI
+ */
+export const andamentoEstaFresco = (
+  andamento: AndamentoProcesso | undefined,
+  agora: number = Date.now()
+): boolean => {
+  if (!andamento?.coletadoEm) return false;
+  const coletadoEm = new Date(andamento.coletadoEm).getTime();
+  if (Number.isNaN(coletadoEm)) return false;
+
+  const validade = andamento.erro ? VALIDADE_ERRO_MS : VALIDADE_ANDAMENTO_MS;
+  return agora - coletadoEm < validade;
+};
+
+export const salvarAndamentos = async (
+  novos: AndamentoProcesso[]
+): Promise<Record<string, AndamentoProcesso>> => {
+  if (!Array.isArray(novos) || novos.length === 0) return obterAndamentos();
+
+  const arm = obterArmazenamento();
+  const atuais = await obterAndamentos();
+
+  for (const andamento of novos) {
+    if (andamento?.numero) {
+      atuais[andamento.numero] = andamento;
+    }
+  }
+
+  // Poda os mais antigos quando o cache cresce demais
+  const entradas = Object.entries(atuais);
+  if (entradas.length > LIMITE_ANDAMENTOS) {
+    entradas.sort(
+      (a, b) => new Date(b[1].coletadoEm).getTime() - new Date(a[1].coletadoEm).getTime()
+    );
+    const podado = Object.fromEntries(entradas.slice(0, LIMITE_ANDAMENTOS));
+    await arm.set(CHAVE_ANDAMENTOS, podado);
+    return podado;
+  }
+
+  await arm.set(CHAVE_ANDAMENTOS, atuais);
+  return atuais;
+};
+
+export const limparAndamentos = async (): Promise<void> => {
+  const arm = obterArmazenamento();
+  await arm.set(CHAVE_ANDAMENTOS, {});
+};
+
+export const obterFiltrosUi = async (): Promise<FiltrosUi> => {
+  const arm = obterArmazenamento();
+  const dados = await arm.get(CHAVE_FILTROS_UI);
+  if (!dados || typeof dados !== 'object') return { ...FILTROS_UI_PADRAO };
+  return { ...FILTROS_UI_PADRAO, ...dados };
+};
+
+export const salvarFiltrosUi = async (filtros: Partial<FiltrosUi>): Promise<FiltrosUi> => {
+  const arm = obterArmazenamento();
+  const atuais = await obterFiltrosUi();
+  const novos = { ...atuais, ...filtros };
+  await arm.set(CHAVE_FILTROS_UI, novos);
+  return novos;
 };
 
 export const obterStatusSessao = async (): Promise<{

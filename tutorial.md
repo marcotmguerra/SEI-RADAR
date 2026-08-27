@@ -1,6 +1,6 @@
-# 📘 Tutorial Completo do CRM-SEI (SEI Notifier)
+# 📘 Tutorial Completo do CRM-SEI (SEI! Radar)
 
-O **CRM-SEI** (ou **SEI Notifier**) é uma extensão de navegador leve, moderna e segura, desenvolvida para servidores e colaboradores que utilizam o **Sistema Eletrônico de Informações (SEI)**. 
+O **CRM-SEI** (ou **SEI! Radar**) é uma extensão de navegador leve, moderna e segura, desenvolvida para servidores e colaboradores que utilizam o **Sistema Eletrônico de Informações (SEI)**. 
 
 Ela monitora sua caixa de processos da unidade em segundo plano, extrai automaticamente assuntos, atribuições e marcadores, e envia notificações nativas na sua área de trabalho sempre que surgirem novos processos de seu interesse.
 
@@ -62,7 +62,7 @@ Ela monitora sua caixa de processos da unidade em segundo plano, extrai automati
 2. No canto superior direito, **ative a chave "Modo do desenvolvedor"** (*Developer mode*).
 3. No canto superior esquerdo, clique no botão **"Carregar sem compactação"** (*Load unpacked*).
 4. Navegue até a pasta do projeto e selecione a pasta **`dist`**.
-5. A extensão **CRM-SEI (SEI Notifier)** aparecerá imediatamente na sua lista de extensões ativas.
+5. A extensão **CRM-SEI (SEI! Radar)** aparecerá imediatamente na sua lista de extensões ativas.
 
 ---
 
@@ -70,7 +70,7 @@ Ela monitora sua caixa de processos da unidade em segundo plano, extrai automati
 
 Para acompanhar facilmente os alertas e o contador de processos:
 1. Clique no ícone de quebra-cabeça 🧩 (menu de Extensões) ao lado da barra de URL do navegador.
-2. Localize **SEI Notifier** e clique no ícone de **Alfinete 📌** (Fixar).
+2. Localize **SEI! Radar** e clique no ícone de **Alfinete 📌** (Fixar).
 3. O ícone azul do SEI ficará sempre visível no navegador.
 
 ---

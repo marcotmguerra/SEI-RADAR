@@ -12,7 +12,6 @@ import {
   CheckCheck,
   User,
   Tag,
-  X,
   Sun,
   ChevronDown,
   ChevronUp,
@@ -28,6 +27,8 @@ import {
   ArrowLeft,
   Inbox,
   Trash2,
+  History,
+  CalendarClock,
 } from 'lucide-react';
 import {
   obterConfiguracao,
@@ -38,20 +39,31 @@ import {
   marcarTodosProcessosComoLidos,
   salvarConfiguracao,
   limparProcessos,
+  obterAndamentos,
+  obterFiltrosUi,
+  salvarFiltrosUi,
+  andamentoEstaFresco,
 } from '../shared/storage';
 import {
   ehProcessoAtribuido,
+  ehSemAtribuicao,
+  ehAtribuidoAOutraPessoa,
+  temPrazo,
   descreverEscopoRadar,
   normalizarParaComparacao,
 } from '../shared/radar';
 import { suportaPainelLateral } from '../shared/painel-lateral';
 import { solicitarPermissaoParaUrl, ehOrigemSuportada } from '../shared/permissoes';
 import type {
+  AndamentoProcesso,
   ConfiguracaoExtensao,
+  FiltroTipo,
+  PeriodoFiltro,
   ProcessoSei,
   StatusSessao,
   RegraNotificacao,
   EscopoRadar,
+  ResultadoBuscaAndamento,
   ResultadoVerificacaoSei,
 } from '../types';
 
@@ -74,7 +86,21 @@ const ehMeuProcesso = (proc: ProcessoSei, sigla?: string): boolean => {
   return ehProcessoAtribuido(proc, sigla);
 };
 
-type PeriodoFiltro = 'todos' | 'hoje' | 'ontem';
+/** Formata "20/08/2026 14:32" a partir de uma data ISO do andamento */
+const formatarDataHora = (dataIso: string | null): string => {
+  if (!dataIso) return '—';
+  try {
+    return new Date(dataIso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
+};
 
 const ehMesmoDiaCalendario = (dataIso: string, referencia: Date): boolean => {
   try {
@@ -109,9 +135,14 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const [ultimaVerificacao, setUltimaVerificacao] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [termoBusca, setTermoBusca] = useState('');
-  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'meus' | 'nao_lidos'>('todos');
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos');
   const [periodoFiltro, setPeriodoFiltro] = useState<PeriodoFiltro>('todos');
   const [marcadorFiltro, setMarcadorFiltro] = useState<string | null>(null);
+  const [filtrosCarregados, setFiltrosCarregados] = useState(false);
+  const [andamentos, setAndamentos] = useState<Record<string, AndamentoProcesso>>({});
+  const [andamentoExpandido, setAndamentoExpandido] = useState<string | null>(null);
+  const [andamentosCarregando, setAndamentosCarregando] = useState<Set<string>>(new Set());
+  const [progressoLote, setProgressoLote] = useState<{ feitos: number; total: number } | null>(null);
   const [marcadorExpandido, setMarcadorExpandido] = useState<{ numero: string; nome: string } | null>(null);
   const [exibindoConfig, setExibindoConfig] = useState(false);
   const [mensagemAviso, setMensagemAviso] = useState<string | null>(null);
@@ -128,17 +159,28 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   // Carrega dados iniciais e dispara checagem rápida
   const carregarDados = async () => {
     try {
-      const [procs, conf, sessao, marcadores] = await Promise.all([
+      const [procs, conf, sessao, marcadores, andamentosSalvos, filtrosSalvos] = await Promise.all([
         obterProcessos(),
         obterConfiguracao(),
         obterStatusSessao(),
         obterMarcadoresDisponiveis(),
+        obterAndamentos(),
+        obterFiltrosUi(),
       ]);
       setProcessos(procs);
       setConfig(conf);
       setStatus(sessao.status);
       setUltimaVerificacao(sessao.ultimaVerificacao);
       setMarcadoresDisponiveis(marcadores);
+      setAndamentos(andamentosSalvos);
+
+      // Restaura os filtros só na primeira carga, para não desfazer escolhas em andamento
+      if (!filtrosCarregados) {
+        setFiltroTipo(filtrosSalvos.filtroTipo);
+        setPeriodoFiltro(filtrosSalvos.periodoFiltro);
+        setMarcadorFiltro(filtrosSalvos.marcadorFiltro);
+        setFiltrosCarregados(true);
+      }
 
       if (conf) {
         setOnboardingEscopo(conf.escopoRadar || 'atribuidos');
@@ -423,6 +465,86 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     setConfig({ ...config, marcadoresNotificacao: atualizada });
   };
 
+  // Persiste os filtros para que sobrevivam ao fechamento do popup
+  useEffect(() => {
+    if (!filtrosCarregados) return;
+    salvarFiltrosUi({ filtroTipo, periodoFiltro, marcadorFiltro }).catch(() => {
+      // Preferência de interface: falhar em silêncio é aceitável
+    });
+  }, [filtrosCarregados, filtroTipo, periodoFiltro, marcadorFiltro]);
+
+  /**
+   * Solicita o andamento de uma lista de processos ao background e mescla o resultado.
+   * Processos com andamento ainda fresco em cache são ignorados.
+   */
+  const solicitarAndamentos = async (alvos: ProcessoSei[], forcar = false) => {
+    const pendentes = alvos.filter(
+      (p) => forcar || !andamentoEstaFresco(andamentos[p.numero])
+    );
+    if (pendentes.length === 0) return;
+
+    const numerosPendentes = new Set(pendentes.map((p) => p.numero));
+    setAndamentosCarregando((atual) => new Set([...atual, ...numerosPendentes]));
+    if (pendentes.length > 1) setProgressoLote({ feitos: 0, total: pendentes.length });
+
+    try {
+      // Enviado em blocos para que o progresso avance de verdade: a fila em si roda
+      // do outro lado da mensagem, e só o retorno de cada bloco chega até aqui
+      const TAMANHO_BLOCO = 5;
+      let concluidos = 0;
+
+      for (let i = 0; i < pendentes.length; i += TAMANHO_BLOCO) {
+        const bloco = pendentes.slice(i, i + TAMANHO_BLOCO);
+
+        const resposta: ResultadoBuscaAndamento | undefined = await chrome.runtime.sendMessage({
+          tipo: 'BUSCAR_ANDAMENTO',
+          processos: bloco.map((p) => ({ numero: p.numero, link: p.link })),
+        });
+
+        if (resposta?.andamentos?.length) {
+          setAndamentos((atual) => {
+            const novo = { ...atual };
+            for (const andamento of resposta.andamentos) {
+              novo[andamento.numero] = andamento;
+            }
+            return novo;
+          });
+        }
+
+        if (resposta && !resposta.sucesso) {
+          if (resposta.mensagem) setMensagemAviso(resposta.mensagem);
+          setSemPermissaoDeHost(Boolean(resposta.semPermissao));
+          // Sem permissão ou sessão caída, insistir nos blocos seguintes só repete o erro
+          break;
+        }
+
+        concluidos += bloco.length;
+        if (pendentes.length > 1) {
+          setProgressoLote({ feitos: concluidos, total: pendentes.length });
+        }
+      }
+    } catch (erro) {
+      console.error('Erro ao buscar andamento:', erro);
+      setMensagemAviso('Não foi possível consultar o andamento no SEI.');
+    } finally {
+      setAndamentosCarregando((atual) => {
+        const novo = new Set(atual);
+        for (const numero of numerosPendentes) novo.delete(numero);
+        return novo;
+      });
+      setProgressoLote(null);
+    }
+  };
+
+  const alternarAndamento = (processo: ProcessoSei) => {
+    if (andamentoExpandido === processo.numero) {
+      setAndamentoExpandido(null);
+      return;
+    }
+    setAndamentoExpandido(processo.numero);
+    solicitarAndamentos([processo]);
+  };
+
   // Contagem de processos atribuídos a mim
   const totalMeus = useMemo(() => {
     return processos.filter((p) => ehMeuProcesso(p, config?.usuarioSigla)).length;
@@ -431,6 +553,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const totalNaoLidos = useMemo(() => {
     return processos.filter((p) => !p.lido).length;
   }, [processos]);
+
+  const totalSemAtribuicao = useMemo(
+    () => processos.filter(ehSemAtribuicao).length,
+    [processos]
+  );
+
+  const totalComPrazo = useMemo(() => processos.filter(temPrazo).length, [processos]);
+
+  const totalDeOutros = useMemo(
+    () => processos.filter((p) => ehAtribuidoAOutraPessoa(p, config?.usuarioSigla)).length,
+    [processos, config?.usuarioSigla]
+  );
+
 
   // Resumo do expediente
   const resumoHoje = useMemo(() => {
@@ -448,6 +583,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
         // Filtro de aba/categoria
         if (filtroTipo === 'nao_lidos' && p.lido) return false;
         if (filtroTipo === 'meus' && !ehMeuProcesso(p, config?.usuarioSigla)) return false;
+        if (filtroTipo === 'sem_atribuicao' && !ehSemAtribuicao(p)) return false;
+        if (filtroTipo === 'outros' && !ehAtribuidoAOutraPessoa(p, config?.usuarioSigla)) {
+          return false;
+        }
+        if (filtroTipo === 'com_prazo' && !temPrazo(p)) return false;
 
         // Filtro de período
         if (periodoFiltro === 'hoje' && !ehHoje(p.detectadoEm)) return false;
@@ -484,7 +624,20 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
         );
       })
       .sort((a, b) => new Date(b.detectadoEm).getTime() - new Date(a.detectadoEm).getTime());
-  }, [processos, filtroTipo, periodoFiltro, marcadorFiltro, termoBusca, config?.usuarioSigla]);
+  }, [
+    processos,
+    filtroTipo,
+    periodoFiltro,
+    marcadorFiltro,
+    termoBusca,
+    config?.usuarioSigla,
+  ]);
+
+  // Processos visíveis que ainda não têm andamento fresco em cache
+  const pendentesDeAndamento = useMemo(
+    () => processosFiltrados.filter((p) => !andamentoEstaFresco(andamentos[p.numero])),
+    [processosFiltrados, andamentos]
+  );
 
   // Renderização da tela de Onboarding Inicial
   if (config && !config.radarOnboardingConcluido) {
@@ -892,6 +1045,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
               </div>
             )}
 
+
             {config.escopoRadar === 'marcadores' && (
               <div className="setting-group">
                 <label className="setting-label">Etiquetas do Radar</label>
@@ -1088,74 +1242,108 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
               />
             </div>
 
-            <div className="filters-row">
-              <div className="filter-pills">
+            {/* Situação continua em pills: é o filtro de triagem, usado o tempo todo,
+                e as contagens precisam ficar à vista */}
+            <div className="filter-pills" role="group" aria-label="Situação">
+              {(
+                [
+                  { valor: 'todos', rotulo: 'Todos', total: processos.length, dica: '' },
+                  { valor: 'meus', rotulo: 'A mim', total: totalMeus, dica: 'Atribuídos a mim' },
+                  { valor: 'nao_lidos', rotulo: 'Novos', total: totalNaoLidos, dica: 'Ainda não lidos' },
+                  {
+                    valor: 'sem_atribuicao',
+                    rotulo: 'S/ atrib.',
+                    total: totalSemAtribuicao,
+                    dica: 'Processos que ainda não foram distribuídos a ninguém',
+                  },
+                  {
+                    valor: 'outros',
+                    rotulo: 'Atribuídos',
+                    total: totalDeOutros,
+                    dica: 'Processos atribuídos a outra pessoa',
+                  },
+                  {
+                    valor: 'com_prazo',
+                    rotulo: 'Com prazo',
+                    total: totalComPrazo,
+                    dica: 'Processos com retorno programado',
+                  },
+                ] as { valor: FiltroTipo; rotulo: string; total: number; dica: string }[]
+              ).map(({ valor, rotulo, total, dica }) => (
                 <button
-                  className={`filter-pill ${filtroTipo === 'todos' ? 'active' : ''}`}
-                  onClick={() => setFiltroTipo('todos')}
+                  key={valor}
+                  className={`filter-pill ${filtroTipo === valor ? 'active' : ''}`}
+                  onClick={() => setFiltroTipo(valor)}
+                  title={dica || rotulo}
+                  aria-pressed={filtroTipo === valor}
                 >
-                  Todos ({processos.length})
-                </button>
-                <button
-                  className={`filter-pill ${filtroTipo === 'meus' ? 'active' : ''}`}
-                  onClick={() => setFiltroTipo('meus')}
-                >
-                  Atribuídos a Mim ({totalMeus})
-                </button>
-                <button
-                  className={`filter-pill ${filtroTipo === 'nao_lidos' ? 'active' : ''}`}
-                  onClick={() => setFiltroTipo('nao_lidos')}
-                >
-                  Novos ({totalNaoLidos})
-                </button>
-              </div>
-
-              {totalNaoLidos > 0 && (
-                <button className="btn-mark-all" onClick={handleMarcarTodosLidos}>
-                  <CheckCheck size={12} style={{ display: 'inline', marginRight: 3 }} />
-                  Marcar todos lidos
-                </button>
-              )}
-            </div>
-
-            <div className="period-pills">
-              {(['todos', 'hoje', 'ontem'] as PeriodoFiltro[]).map((periodo) => (
-                <button
-                  key={periodo}
-                  className={`period-pill ${periodoFiltro === periodo ? 'active' : ''}`}
-                  onClick={() => setPeriodoFiltro(periodo)}
-                >
-                  {periodo === 'todos' ? 'Todos' : periodo === 'hoje' ? 'Hoje' : 'Ontem'}
+                  {rotulo} <span className="pill-count">{total}</span>
                 </button>
               ))}
             </div>
 
-            {/* Chips de Marcadores */}
-            {todosMarcadores.length > 0 && (
-              <div className="marker-chips-row">
-                <button
-                  className={`marker-chip ${marcadorFiltro === null ? 'active' : ''}`}
-                  onClick={() => setMarcadorFiltro(null)}
+            <div className="filters-controls">
+              <select
+                className="filter-select"
+                value={periodoFiltro}
+                onChange={(e) => setPeriodoFiltro(e.target.value as PeriodoFiltro)}
+                aria-label="Período"
+              >
+                <option value="todos">Período: todos</option>
+                <option value="hoje">Hoje</option>
+                <option value="ontem">Ontem</option>
+              </select>
+
+              {todosMarcadores.length > 0 && (
+                <select
+                  className="filter-select"
+                  value={marcadorFiltro ?? ''}
+                  onChange={(e) => setMarcadorFiltro(e.target.value || null)}
+                  aria-label="Etiqueta"
                 >
-                  Todas Etiquetas
-                </button>
-                {todosMarcadores.map((marcador) => {
-                  const ativo =
-                    marcadorFiltro?.trim().toLowerCase() === marcador.trim().toLowerCase();
-                  return (
-                    <button
-                      key={marcador}
-                      className={`marker-chip ${ativo ? 'active' : ''}`}
-                      onClick={() => setMarcadorFiltro(ativo ? null : marcador)}
-                    >
-                      <Tag size={10} style={{ marginRight: 3 }} />
+                  <option value="">Todas as etiquetas</option>
+                  {todosMarcadores.map((marcador) => (
+                    <option key={marcador} value={marcador}>
                       {marcador}
-                      {ativo && <X size={10} style={{ marginLeft: 3 }} />}
-                    </button>
-                  );
-                })}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              <div className="filters-actions">
+                {processosFiltrados.length > 0 && (
+                  <button
+                    className="btn-icon-acao"
+                    onClick={() => solicitarAndamentos(pendentesDeAndamento)}
+                    disabled={progressoLote !== null || pendentesDeAndamento.length === 0}
+                    title={
+                      progressoLote
+                        ? `Consultando ${progressoLote.feitos}/${progressoLote.total}...`
+                        : pendentesDeAndamento.length === 0
+                          ? 'Andamentos já atualizados'
+                          : `Detalhar andamento de ${pendentesDeAndamento.length} processo(s)`
+                    }
+                  >
+                    <History size={13} />
+                    {progressoLote && (
+                      <span className="btn-icon-badge">
+                        {progressoLote.feitos}/{progressoLote.total}
+                      </span>
+                    )}
+                  </button>
+                )}
+
+                {totalNaoLidos > 0 && (
+                  <button
+                    className="btn-icon-acao"
+                    onClick={handleMarcarTodosLidos}
+                    title="Marcar todos como lidos"
+                  >
+                    <CheckCheck size={13} />
+                  </button>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
           <main className="process-list">
@@ -1189,14 +1377,35 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                     <span>
                       {filtroTipo === 'meus' && !config?.usuarioSigla
                         ? 'Configure seu CPF nas opções para ver os processos atribuídos a você.'
-                        : 'Tente alterar os filtros ou termos da busca.'}
+                        : (filtroTipo === 'sem_atribuicao' || filtroTipo === 'outros') &&
+                            config?.escopoRadar === 'atribuidos'
+                          ? 'Seu Radar está limitado aos processos atribuídos a você, então nada aparece aqui. Mude o escopo para "Todos da unidade" para acompanhar a distribuição.'
+                          : filtroTipo === 'sem_atribuicao'
+                            ? 'Nenhum processo sem atribuição no momento.'
+                            : filtroTipo === 'outros'
+                              ? 'Nenhum processo atribuído a outra pessoa no momento.'
+                              : filtroTipo === 'com_prazo'
+                                ? 'Nenhum processo com prazo (retorno programado) no momento.'
+                                : 'Tente alterar os filtros ou termos da busca.'}
                     </span>
+                    {(filtroTipo === 'sem_atribuicao' || filtroTipo === 'outros') &&
+                      config?.escopoRadar === 'atribuidos' && (
+                        <button
+                          type="button"
+                          className="btn-sync-inicial"
+                          onClick={() => handleSalvarConfig({ escopoRadar: 'unidade' })}
+                        >
+                          Acompanhar todos da unidade
+                        </button>
+                      )}
                   </>
                 )}
               </div>
             ) : (
               processosFiltrados.map((proc) => {
                 const ehMeu = ehMeuProcesso(proc, config?.usuarioSigla);
+                const andamentoAtual = andamentos[proc.numero];
+                const prazoVencido = Boolean(proc.prazo && new Date(proc.prazo) < new Date());
 
                 return (
                   <article
@@ -1221,6 +1430,19 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                       </a>
 
                       <div className="process-badges">
+                        {proc.prazoTexto && (
+                          <span
+                            className="badge-prazo"
+                            title={
+                              prazoVencido
+                                ? `Prazo vencido em ${proc.prazoTexto}`
+                                : `Retorno programado para ${proc.prazoTexto}`
+                            }
+                          >
+                            <CalendarClock size={10} style={{ marginRight: 2 }} />
+                            {proc.prazoTexto}
+                          </span>
+                        )}
                         {proc.atribuidoPara && (
                           <span className={`badge-attribution ${ehMeu ? 'mine' : ''}`}>
                             <User size={10} style={{ marginRight: 2 }} />
@@ -1284,11 +1506,96 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                       </div>
                     )}
 
+                    {andamentoExpandido === proc.numero && (
+                      <div className="andamento-box" onClick={(e) => e.stopPropagation()}>
+                        {andamentosCarregando.has(proc.numero) ? (
+                          <span className="andamento-status">
+                            <RefreshCw size={11} className="spin" /> Consultando o andamento no
+                            SEI...
+                          </span>
+                        ) : andamentoAtual?.erro ? (
+                          <div className="andamento-erro">
+                            <span>{andamentoAtual.erro}</span>
+                            <button
+                              className="btn-read-toggle"
+                              onClick={() => solicitarAndamentos([proc], true)}
+                            >
+                              Tentar de novo
+                            </button>
+                          </div>
+                        ) : andamentoAtual ? (
+                          <>
+                            <dl className="andamento-grid">
+                              <div>
+                                <dt>Unidade geradora</dt>
+                                <dd>{andamentoAtual.unidadeGeradora || '—'}</dd>
+                              </div>
+                              <div>
+                                <dt>Enviado por</dt>
+                                <dd>{andamentoAtual.enviadoPorUnidade || '—'}</dd>
+                              </div>
+                              <div>
+                                <dt>Data de envio</dt>
+                                <dd>{formatarDataHora(andamentoAtual.dataEnvio)}</dd>
+                              </div>
+                              <div>
+                                <dt>Última atualização</dt>
+                                <dd>{formatarDataHora(andamentoAtual.atualizadoEmSei)}</dd>
+                              </div>
+                              {andamentoAtual.linhas.length > 0 && (
+                                <div className="andamento-grid-full">
+                                  <dt>Descrição</dt>
+                                  <dd>
+                                    {andamentoAtual.linhas[andamentoAtual.linhas.length - 1]
+                                      ?.descricao || '—'}
+                                  </dd>
+                                </div>
+                              )}
+                            </dl>
+                            {andamentoAtual.linkAndamento && (
+                              <a
+                                href={andamentoAtual.linkAndamento}
+                                className="andamento-link"
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAbrirSei(andamentoAtual.linkAndamento);
+                                }}
+                              >
+                                Ver andamento completo no SEI
+                                <ExternalLink size={10} />
+                              </a>
+                            )}
+                          </>
+                        ) : (
+                          <span className="andamento-status">Andamento indisponível.</span>
+                        )}
+                      </div>
+                    )}
+
                     <div className="process-footer">
                       <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <Clock size={11} />
                         {formatarHora(proc.detectadoEm)}
                       </span>
+
+                      <button
+                        className="btn-read-toggle"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          alternarAndamento(proc);
+                        }}
+                        title="Ver de onde veio o processo e quando foi enviado"
+                      >
+                        <History size={12} />
+                        Andamento
+                        {andamentoExpandido === proc.numero ? (
+                          <ChevronUp size={10} />
+                        ) : (
+                          <ChevronDown size={10} />
+                        )}
+                      </button>
 
                       {!proc.lido && (
                         <button

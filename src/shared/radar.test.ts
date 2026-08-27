@@ -4,6 +4,8 @@ import {
   filtrarProcessosPorRadar,
   descreverEscopoRadar,
   ehProcessoAtribuido,
+  ehSemAtribuicao,
+  ehAtribuidoAOutraPessoa,
   normalizarParaComparacao,
 } from './radar';
 import type { ConfiguracaoExtensao, ProcessoSei } from '../types';
@@ -111,7 +113,7 @@ describe('Radar Manager & Utilities', () => {
       ...configBase,
       escopoRadar: 'atribuidos',
       usuarioSigla: '00652162614',
-    };
+        };
 
     it('inclui apenas processos atribuídos ao usuário configurado', () => {
       expect(processoPertenceAoRadar(mockProcesso1, configAtribuidos)).toBe(true);
@@ -163,7 +165,7 @@ describe('Radar Manager & Utilities', () => {
         ...configBase,
         escopoRadar: 'atribuidos',
         usuarioSigla: '00652162614',
-      });
+            });
       expect(filtradosAtribuidos).toEqual([mockProcesso1]);
 
       const filtradosMarcadores = filtrarProcessosPorRadar(lista, {
@@ -222,6 +224,54 @@ describe('Radar Manager & Utilities', () => {
           marcadoresRadar: [],
         })
       ).toBe('Etiquetas (nenhuma selecionada)');
+    });
+  });
+
+  describe('ehSemAtribuicao', () => {
+    const comAtribuicao = (valor: string | null | undefined): ProcessoSei => ({
+      numero: '1400.01.000900/2026-09',
+      assunto: 'Teste',
+      link: 'https://sei.mg.gov.br/9',
+      detectadoEm: new Date().toISOString(),
+      lido: false,
+      atribuidoPara: valor,
+    });
+
+    it('reconhece apenas null como sem atribuição confirmada', () => {
+      expect(ehSemAtribuicao(comAtribuicao(null))).toBe(true);
+    });
+
+    it('não trata leitura inconclusiva (undefined) como sem atribuição', () => {
+      expect(ehSemAtribuicao(comAtribuicao(undefined))).toBe(false);
+    });
+
+    it('não trata processo atribuído como sem atribuição', () => {
+      expect(ehSemAtribuicao(comAtribuicao('GUERRA'))).toBe(false);
+    });
+  });
+
+  describe('ehAtribuidoAOutraPessoa', () => {
+    const processoDe = (valor: string | null | undefined): ProcessoSei => ({
+      numero: '1400.01.000901/2026-10',
+      assunto: 'Teste',
+      link: 'https://sei.mg.gov.br/10',
+      detectadoEm: new Date().toISOString(),
+      lido: false,
+      atribuidoPara: valor,
+    });
+
+    it('identifica processo atribuído a um colega', () => {
+      expect(ehAtribuidoAOutraPessoa(processoDe('OUTRO.MILITAR'), '00652162614')).toBe(true);
+    });
+
+    it('não conta o processo do próprio usuário, mesmo com CPF formatado', () => {
+      expect(ehAtribuidoAOutraPessoa(processoDe('006.521.626-14'), '00652162614')).toBe(false);
+    });
+
+    it('não conta processos sem atribuição nem com leitura inconclusiva', () => {
+      expect(ehAtribuidoAOutraPessoa(processoDe(null), '00652162614')).toBe(false);
+      expect(ehAtribuidoAOutraPessoa(processoDe(undefined), '00652162614')).toBe(false);
+      expect(ehAtribuidoAOutraPessoa(processoDe('   '), '00652162614')).toBe(false);
     });
   });
 });
