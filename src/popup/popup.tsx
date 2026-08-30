@@ -29,6 +29,9 @@ import {
   Trash2,
   History,
   CalendarClock,
+  Radar,
+  Lock,
+  Zap,
 } from 'lucide-react';
 import {
   obterConfiguracao,
@@ -123,6 +126,82 @@ const ehOntem = (dataIso: string): boolean => {
   return ehMesmoDiaCalendario(dataIso, ontem);
 };
 
+/**
+ * Etapas da primeira abertura. A tela de escopo já existia; as outras três foram
+ * acrescentadas para que a primeira carga deixe de ser um vazio de ~2 segundos.
+ */
+type EtapaOnboarding = 'boas-vindas' | 'escopo' | 'sincronizando' | 'pronto' | 'concluido';
+
+/** Mensagens que se revezam durante a primeira sincronização, na ordem em que o trabalho acontece */
+const MENSAGENS_SINCRONIZACAO = [
+  'Conectando ao SEI…',
+  'Lendo a caixa da unidade…',
+  'Aplicando o seu radar…',
+  'Organizando os processos…',
+];
+
+const INTERVALO_MENSAGEM_MS = 900;
+
+/**
+ * Radar animado da tela de sincronização.
+ *
+ * SVG inline em vez de biblioteca de animação: são poucos elementos, o bundle da extensão
+ * não cresce e a varredura é um único `transform: rotate()`, que o compositor resolve sem
+ * repintar. O bloco global de `prefers-reduced-motion` no CSS desliga tudo sozinho.
+ */
+const RadarAnimado: React.FC<{ concluido?: boolean }> = ({ concluido = false }) => (
+  <div className={`radar-animado ${concluido ? 'concluido' : ''}`} aria-hidden="true">
+    <svg viewBox="0 0 160 160" className="radar-svg">
+      <circle className="radar-anel" cx="80" cy="80" r="72" />
+      <circle className="radar-anel radar-anel--2" cx="80" cy="80" r="52" />
+      <circle className="radar-anel radar-anel--3" cx="80" cy="80" r="32" />
+      <line className="radar-cruz" x1="80" y1="8" x2="80" y2="152" />
+      <line className="radar-cruz" x1="8" y1="80" x2="152" y2="80" />
+      {!concluido && (
+        <g className="radar-varredura">
+          <defs>
+            <linearGradient id="gradienteVarredura" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="var(--cor-petroleo)" stopOpacity="0" />
+              <stop offset="100%" stopColor="var(--cor-petroleo)" stopOpacity="0.55" />
+            </linearGradient>
+          </defs>
+          <path d="M80 80 L152 80 A72 72 0 0 0 80 8 Z" fill="url(#gradienteVarredura)" />
+          <line x1="80" y1="80" x2="80" y2="8" className="radar-agulha" />
+        </g>
+      )}
+      <circle className="radar-centro" cx="80" cy="80" r="5" />
+      {!concluido && (
+        <>
+          <circle className="radar-eco radar-eco--1" cx="112" cy="52" r="4" />
+          <circle className="radar-eco radar-eco--2" cx="54" cy="104" r="4" />
+          <circle className="radar-eco radar-eco--3" cx="104" cy="112" r="4" />
+        </>
+      )}
+    </svg>
+    {concluido && (
+      <span className="radar-selo-pronto">
+        <Check size={30} strokeWidth={3} />
+      </span>
+    )}
+  </div>
+);
+
+/** Cartões-fantasma exibidos enquanto a primeira leva de processos não chegou */
+const EsqueletoProcessos: React.FC<{ quantidade?: number }> = ({ quantidade = 4 }) => (
+  <div className="lista-esqueleto" aria-hidden="true">
+    {Array.from({ length: quantidade }, (_, i) => (
+      <div className="processo-esqueleto" key={i} style={{ animationDelay: `${i * 90}ms` }}>
+        <div className="esqueleto-linha esqueleto-linha--titulo" />
+        <div className="esqueleto-linha esqueleto-linha--assunto" />
+        <div className="esqueleto-chips">
+          <div className="esqueleto-chip" />
+          <div className="esqueleto-chip esqueleto-chip--curto" />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 interface PopupAppProps {
   modoLateral?: boolean;
 }
@@ -152,9 +231,13 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   const timeoutConfirmacaoRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Estados temporários para Onboarding
+  const [etapaOnboarding, setEtapaOnboarding] = useState<EtapaOnboarding>('boas-vindas');
   const [onboardingEscopo, setOnboardingEscopo] = useState<EscopoRadar>('atribuidos');
   const [onboardingCpf, setOnboardingCpf] = useState('');
   const [onboardingMarcadores, setOnboardingMarcadores] = useState<string[]>([]);
+  const [resultadoPrimeiraCarga, setResultadoPrimeiraCarga] =
+    useState<ResultadoVerificacaoSei | null>(null);
+  const [indiceMensagemSincronizacao, setIndiceMensagemSincronizacao] = useState(0);
 
   // Carrega dados iniciais e dispara checagem rápida
   const carregarDados = async () => {
@@ -205,6 +288,21 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     }
   }, []);
 
+  // Reveza as mensagens da tela de sincronização.
+  //
+  // Amarrado à etapa, e não ao mount: salvar as configurações abre o pedido nativo de
+  // permissão, o popup perde o foco e um timer iniciado no mount voltaria fora de hora.
+  useEffect(() => {
+    if (etapaOnboarding !== 'sincronizando') return;
+
+    setIndiceMensagemSincronizacao(0);
+    const intervalo = setInterval(() => {
+      setIndiceMensagemSincronizacao((i) => Math.min(i + 1, MENSAGENS_SINCRONIZACAO.length - 1));
+    }, INTERVALO_MENSAGEM_MS);
+
+    return () => clearInterval(intervalo);
+  }, [etapaOnboarding]);
+
   // Pré-carrega o windowId no mount para abrir na lateral
   useEffect(() => {
     if (modoLateral || !suportaPainelLateral()) return;
@@ -227,28 +325,34 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     };
   }, []);
 
-  // Dispara verificação manual imediata
-  const handleVerificarAgora = async () => {
+  // Dispara verificação manual imediata. Devolve o resultado para quem precisa dele —
+  // a tela de sincronização do onboarding decide o que mostrar a partir dele.
+  const handleVerificarAgora = async (
+    pisoMs = 600
+  ): Promise<ResultadoVerificacaoSei | null> => {
     setCarregando(true);
     const inicio = Date.now();
+    let resultado: ResultadoVerificacaoSei | null = null;
     try {
       if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
         const resposta = await chrome.runtime.sendMessage<
           { tipo: string },
           ResultadoVerificacaoSei
         >({ tipo: 'VERIFICAR_AGORA' });
+        resultado = resposta ?? null;
         setSemPermissaoDeHost(Boolean(resposta?.semPermissao));
       }
       await carregarDados();
     } catch (erro) {
       console.error('Erro na verificação manual:', erro);
     } finally {
-      const restante = 600 - (Date.now() - inicio);
+      const restante = pisoMs - (Date.now() - inicio);
       if (restante > 0) {
         await new Promise((resolve) => setTimeout(resolve, restante));
       }
       setCarregando(false);
     }
+    return resultado;
   };
 
   // Abre ou foca a aba do SEI
@@ -300,7 +404,12 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   };
 
   // Salva alterações de configuração
-  const handleSalvarConfig = async (novaConfiguracao?: Partial<ConfiguracaoExtensao>) => {
+  const handleSalvarConfig = async (
+    novaConfiguracao?: Partial<ConfiguracaoExtensao>,
+    // Durante o onboarding quem manda na tela é a máquina de etapas: o "Configurações
+    // salvas!" e o fechamento automático do painel só fazem sentido na tela de opções.
+    opcoes: { silencioso?: boolean } = {}
+  ) => {
     if (!config) return;
     const configAtualizada = { ...config, ...(novaConfiguracao || {}) };
 
@@ -332,6 +441,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       });
     }
 
+    if (opcoes.silencioso) {
+      await carregarDados();
+      return;
+    }
+
     setMensagemAviso(avisoPermissao || 'Configurações salvas!');
     await carregarDados();
     setTimeout(() => {
@@ -341,29 +455,40 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
   };
 
   // Handlers do Onboarding
-  const handleConcluirOnboarding = async () => {
+
+  /**
+   * Grava o escopo escolhido e faz a primeira carga com a tela de sincronização à frente.
+   *
+   * A ordem importa: a etapa muda **antes** dos awaits. Salvar dispara o pedido nativo de
+   * permissão e a primeira leitura do SEI, que juntos passam de um segundo — antes disso
+   * ficava a tela de escopo congelada, sem nenhum sinal de que algo estava acontecendo.
+   */
+  const iniciarPrimeiraCarga = async (atualizacoes: Partial<ConfiguracaoExtensao>) => {
     if (!config) return;
-    const atualizacoes: Partial<ConfiguracaoExtensao> = {
+    setEtapaOnboarding('sincronizando');
+    await handleSalvarConfig(atualizacoes, { silencioso: true });
+    // Piso maior que o normal: a varredura do radar precisa completar ao menos uma volta
+    // para não piscar na tela quando o SEI responde rápido.
+    const resultado = await handleVerificarAgora(2400);
+    setResultadoPrimeiraCarga(resultado);
+    setEtapaOnboarding('pronto');
+  };
+
+  const handleConcluirOnboarding = () =>
+    iniciarPrimeiraCarga({
       escopoRadar: onboardingEscopo,
-      usuarioSigla: onboardingCpf || config.usuarioSigla,
+      usuarioSigla: onboardingCpf || config?.usuarioSigla || '',
       marcadoresRadar: onboardingMarcadores,
       radarOnboardingConcluido: true,
       primeiraCargaRealizada: false,
-    };
-    await handleSalvarConfig(atualizacoes);
-    await handleVerificarAgora();
-  };
+    });
 
-  const handleConfigurarDepois = async () => {
-    if (!config) return;
-    const atualizacoes: Partial<ConfiguracaoExtensao> = {
+  const handleConfigurarDepois = () =>
+    iniciarPrimeiraCarga({
       escopoRadar: 'unidade',
       radarOnboardingConcluido: true,
       primeiraCargaRealizada: false,
-    };
-    await handleSalvarConfig(atualizacoes);
-    await handleVerificarAgora();
-  };
+    });
 
   // Dispara notificação de teste
   const handleTestarNotificacao = async () => {
@@ -639,8 +764,28 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
     [processosFiltrados, andamentos]
   );
 
-  // Renderização da tela de Onboarding Inicial
-  if (config && !config.radarOnboardingConcluido) {
+  // Enquanto a configuração não chegou do armazenamento não dá para saber qual tela é a
+  // certa. Sem este guarda, a tela principal aparecia por um quadro antes do onboarding.
+  if (!config) {
+    return (
+      <div className="popup-container onboarding-container tela-inicial">
+        <RadarAnimado />
+        <p className="onboarding-subtitle">Abrindo o Radar…</p>
+      </div>
+    );
+  }
+
+  // Renderização do Onboarding Inicial.
+  //
+  // As etapas "sincronizando" e "pronto" precisam continuar valendo mesmo depois de
+  // `radarOnboardingConcluido` virar true: é justamente ao salvar que a primeira carga
+  // começa, e é ela que essas telas mostram.
+  const emOnboarding =
+    !config.radarOnboardingConcluido ||
+    etapaOnboarding === 'sincronizando' ||
+    etapaOnboarding === 'pronto';
+
+  if (emOnboarding) {
     const onboardingSemEtiquetas =
       onboardingEscopo === 'marcadores' && onboardingMarcadores.length === 0;
     const previaEscopo = descreverEscopoRadar({
@@ -649,6 +794,140 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
       usuarioSigla: onboardingCpf || config.usuarioSigla,
       marcadoresRadar: onboardingMarcadores,
     });
+
+    if (etapaOnboarding === 'boas-vindas') {
+      return (
+        <div className="popup-container onboarding-container">
+          <div className="boas-vindas">
+            <RadarAnimado />
+
+            <h1 className="boas-vindas-titulo">SEI! Radar</h1>
+            <p className="boas-vindas-linha">
+              Ele fica de olho na sua caixa do SEI e avisa quando chega processo novo — sem
+              você precisar ficar atualizando a página.
+            </p>
+
+            <ul className="boas-vindas-lista">
+              <li>
+                <span className="boas-vindas-icone">
+                  <Lock size={15} />
+                </span>
+                <div>
+                  <strong>Só leitura, sempre.</strong> O Radar lê o que já está na sua tela do
+                  SEI. Ele não abre, não move, não assina e não altera nada.
+                </div>
+              </li>
+              <li>
+                <span className="boas-vindas-icone">
+                  <ShieldCheck size={15} />
+                </span>
+                <div>
+                  <strong>Nada sai do seu navegador.</strong> Não existe servidor, conta nem
+                  senha: os processos ficam guardados só na sua máquina.
+                </div>
+              </li>
+              <li>
+                <span className="boas-vindas-icone">
+                  <Zap size={15} />
+                </span>
+                <div>
+                  <strong>Configuração em um passo.</strong> Você escolhe o que quer
+                  acompanhar e o Radar cuida do resto.
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <footer className="onboarding-footer">
+            <button
+              className="btn-primary-full btn-cta"
+              onClick={() => setEtapaOnboarding('escopo')}
+            >
+              Começar
+              <ArrowRight size={14} />
+            </button>
+            <p className="onboarding-passo">Passo 1 de 2</p>
+          </footer>
+        </div>
+      );
+    }
+
+    if (etapaOnboarding === 'sincronizando') {
+      return (
+        <div className="popup-container onboarding-container">
+          <div className="sincronizando">
+            <RadarAnimado />
+            <h1 className="sincronizando-titulo">Carregando seus processos</h1>
+            <p className="sincronizando-mensagem" aria-live="polite">
+              {MENSAGENS_SINCRONIZACAO[indiceMensagemSincronizacao]}
+            </p>
+            <div className="sincronizando-trilha" aria-hidden="true">
+              <span className="sincronizando-progresso" />
+            </div>
+            <p className="sincronizando-nota">
+              <ShieldCheck size={13} />
+              Lendo o que já está na sua tela do SEI. Nada é alterado.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (etapaOnboarding === 'pronto') {
+      // A primeira carga é sempre um retrato silencioso do que já existia: ela devolve
+      // `novos: 0` por definição. O número que significa alguma coisa aqui é o total.
+      const total = resultadoPrimeiraCarga?.total ?? processos.length;
+      const naoCarregou = total === 0;
+      const faltaAcesso = Boolean(resultadoPrimeiraCarga?.semPermissao);
+
+      return (
+        <div className="popup-container onboarding-container">
+          <div className="pronto">
+            <RadarAnimado concluido />
+
+            {naoCarregou ? (
+              <>
+                <h1 className="pronto-titulo">Radar ativado</h1>
+                <p className="pronto-linha">
+                  {faltaAcesso
+                    ? 'Ainda não consegui ler nada: abra o SEI numa aba e o Radar carrega seus processos na hora.'
+                    : 'Nenhum processo entrou no seu radar por enquanto. Abra o SEI para o Radar fazer a primeira leitura.'}
+                </p>
+                <button className="btn-primary-full btn-cta" onClick={() => handleAbrirSei()}>
+                  <ExternalLink size={14} />
+                  Abrir o SEI
+                </button>
+                <button
+                  type="button"
+                  className="btn-skip-onboarding"
+                  onClick={() => setEtapaOnboarding('concluido')}
+                >
+                  Ver o Radar mesmo assim
+                </button>
+              </>
+            ) : (
+              <>
+                <h1 className="pronto-titulo">Tudo pronto!</h1>
+                <p className="pronto-contador">
+                  <strong>{total}</strong> {total === 1 ? 'processo' : 'processos'} no seu Radar
+                </p>
+                <p className="pronto-linha">
+                  A partir de agora, você é avisado quando chegar algo novo. Esta primeira
+                  leitura é só o retrato do que já existia — ela não gera notificação.
+                </p>
+                <button
+                  className="btn-primary-full btn-cta"
+                  onClick={() => setEtapaOnboarding('concluido')}
+                >
+                  Ver meus processos
+                  <ArrowRight size={14} />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="popup-container onboarding-container">
@@ -827,6 +1106,8 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
             Configurar depois
           </button>
 
+          <p className="onboarding-passo">Passo 2 de 2</p>
+
           <p className="onboarding-privacy-note">
             <ShieldCheck size={13} />
             Tudo fica no seu navegador. Nada é alterado no SEI para outras pessoas.
@@ -856,7 +1137,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
           </button>
           <button
             className="btn-icon"
-            onClick={handleVerificarAgora}
+            onClick={() => handleVerificarAgora()}
             disabled={carregando}
             title="Verificar agora"
             aria-label="Verificar processos agora"
@@ -968,7 +1249,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
             <AlertTriangle size={15} aria-hidden="true" />
             SEI instável ou fora do ar. Tentando reconectar...
           </span>
-          <button className="btn-banner-action" onClick={handleVerificarAgora}>
+          <button className="btn-banner-action" onClick={() => handleVerificarAgora()}>
             Reconectar
           </button>
         </div>
@@ -1172,6 +1453,26 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
               </label>
             </div>
 
+            <div className="setting-toggle-row">
+              <div>
+                <div className="setting-label">Avisar quando a sessão do SEI cair</div>
+                <div className="setting-toggle-desc">
+                  Desligado por padrão. O ícone da extensão já mostra <strong>OFF</strong> e o
+                  aviso aparece dentro do Radar quando você abre.
+                </div>
+              </div>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={config.notificarDesconexao}
+                  onChange={(e) =>
+                    setConfig({ ...config, notificarDesconexao: e.target.checked })
+                  }
+                />
+                <span className="slider" />
+              </label>
+            </div>
+
             <button className="btn-secondary" onClick={handleTestarNotificacao}>
               <Bell size={14} />
               Testar Notificação de Exemplo
@@ -1347,7 +1648,11 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
           </div>
 
           <main className="process-list">
-            {processosFiltrados.length === 0 ? (
+            {carregando && processos.length === 0 ? (
+              // Primeira leva ainda a caminho: cartões-fantasma dizem "vem processo aí" em
+              // vez de afirmar, por um instante, que o radar está vazio.
+              <EsqueletoProcessos />
+            ) : processosFiltrados.length === 0 ? (
               <div className="empty-state">
                 {processos.length === 0 ? (
                   <>
@@ -1363,7 +1668,7 @@ export const PopupApp: React.FC<PopupAppProps> = ({ modoLateral = false }) => {
                     <button
                       type="button"
                       className="btn-sync-inicial"
-                      onClick={handleVerificarAgora}
+                      onClick={() => handleVerificarAgora()}
                       disabled={carregando}
                     >
                       <RefreshCw size={14} className={carregando ? 'spin' : ''} />

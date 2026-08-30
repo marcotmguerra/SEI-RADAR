@@ -60,8 +60,14 @@ O mesmo vale para a leitura da página com a aba aberta: os `content_scripts` ta
 ## Comandos de Desenvolvimento
 
 ```bash
+# Executa tudo o que o CI cobra: tipos + testes unitários
+npm run verify
+
 # Executa a suíte de testes unitários (Vitest)
 npm test
+
+# Executa os testes de ponta a ponta do popup (Playwright); compila antes
+npm run test:e2e
 
 # Valida os tipos TypeScript
 npm run typecheck
@@ -69,15 +75,28 @@ npm run typecheck
 # Compila a extensão e gera os arquivos da pasta dist/
 npm run build
 
+# Compila e gera o dist.zip pronto para a Chrome Web Store
+npm run package
+
+# Gera as imagens 1280x800 da loja a partir do popup real, com dados fictícios
+npm run screenshots
+
 # Inicia o servidor Vite para desenvolvimento de interface
 npm run dev
 ```
+
+> `npm run package` monta o `dist.zip` com o `manifest.json` na raiz, que é como a Chrome Web
+> Store espera receber o pacote. Use sempre esse comando em vez de compactar a pasta à mão: o
+> pacote da versão 1.0.1 foi feito manualmente e acabou ficando defasado em relação ao código.
+
+> `npm run screenshots` precisa do Chromium do Playwright (`npx playwright install chromium`).
+> Se já houver um Chromium na máquina, aponte para ele com `CHROMIUM_PATH=/caminho/do/chrome`.
 
 ---
 
 ## Privacidade e Segurança
 
-- A extensão opera estritamente em modo **somente leitura**: todas as requisições ao SEI são `GET`, e nenhuma linha do código escreve na página do SEI (não há envio de formulário, clique automatizado ou alteração de conteúdo).
+- A extensão opera estritamente em modo **somente leitura**: todas as requisições ao SEI são `GET`, e nenhuma linha do código escreve na página do SEI (não há envio de formulário, clique automatizado ou alteração de conteúdo). Ela não abre, não move, não assina e não conclui processo nenhum.
 - O navegador exibe o aviso *"Ler e alterar seus dados"* nos domínios autorizados. Esse texto é fixo do Chrome e descreve o que a permissão **habilita**, não o que a extensão faz — não existe permissão de host somente-leitura no navegador. O escopo, esse sim, foi restringido aos domínios institucionais listados acima.
 - Não envia dados para servidores externos ou serviços em nuvem.
 - Os processos coletados e as preferências de configuração ficam armazenados exclusivamente na memória local do seu próprio navegador (`chrome.storage.local`).

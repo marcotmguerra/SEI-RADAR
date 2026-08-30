@@ -182,6 +182,7 @@ describe('deveNotificarProcesso', () => {
     intervaloMinutos: 5,
     somAtivo: true,
     notificacoesAtivas: true,
+    notificarDesconexao: false,
     regraNotificacao: 'todos',
     usuarioSigla: '',
       marcadoresNotificacao: [],
@@ -361,5 +362,98 @@ describe('deveNotificarProcesso', () => {
       expect(resultado.novos).toBe(1);
       expect(criarNotificacao).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('aviso de sessão finalizada', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    delete (globalThis as any).chrome;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Leva o status a "conectado", que é o ponto de partida de qualquer queda real */
+  const conectarPrimeiro = async () => {
+    mockFetchOk(HTML_PROCESSOS);
+    await executarVerificacaoSei();
+  };
+
+  it('não avisa nada quando notificarDesconexao está desligado (o padrão)', async () => {
+    await salvarConfiguracao({ escopoRadar: 'unidade' });
+    mockOffscreenDisponivel();
+    await conectarPrimeiro();
+
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+
+    expect(criarNotificacao).not.toHaveBeenCalled();
+  });
+
+  it('avisa uma vez na queda da sessão quando o usuário liga a opção', async () => {
+    await salvarConfiguracao({ escopoRadar: 'unidade', notificarDesconexao: true });
+    mockOffscreenDisponivel();
+    await conectarPrimeiro();
+
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+
+    expect(criarNotificacao).toHaveBeenCalledTimes(1);
+    expect(criarNotificacao.mock.calls[0]?.[1]?.title).toContain('Sessão do SEI Finalizada');
+  });
+
+  it('não repete o aviso a cada verificação enquanto a sessão continua caída', async () => {
+    await salvarConfiguracao({ escopoRadar: 'unidade', notificarDesconexao: true });
+    mockOffscreenDisponivel();
+    await conectarPrimeiro();
+
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+    await executarVerificacaoSei();
+    await executarVerificacaoSei();
+
+    expect(criarNotificacao).toHaveBeenCalledTimes(1);
+  });
+
+  it('continua sem repetir o aviso depois de o service worker ser descartado e recarregado', async () => {
+    // A regressão original: o cooldown morava numa variável de módulo, e o service worker do
+    // Manifest V3 é descartado depois de segundos ocioso. A cada despertar do alarme o módulo
+    // voltava zerado e o aviso disparava de novo — de 5 em 5 minutos, indefinidamente.
+    // resetModules + reimportação reproduzem exatamente esse descarte.
+    await salvarConfiguracao({ escopoRadar: 'unidade', notificarDesconexao: true });
+    mockOffscreenDisponivel();
+    await conectarPrimeiro();
+
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+    expect(criarNotificacao).toHaveBeenCalledTimes(1);
+
+    vi.resetModules();
+    const moduloRecarregado = await import('./service-worker');
+    mockFetchOk(HTML_LOGIN);
+    await moduloRecarregado.executarVerificacaoSei();
+
+    expect(criarNotificacao).toHaveBeenCalledTimes(1);
+  });
+
+  it('volta a avisar depois de a sessão se recuperar e cair de novo', async () => {
+    await salvarConfiguracao({ escopoRadar: 'unidade', notificarDesconexao: true });
+    mockOffscreenDisponivel();
+    await conectarPrimeiro();
+
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+    expect(criarNotificacao).toHaveBeenCalledTimes(1);
+
+    // Reconexão limpa o marcador persistido...
+    await conectarPrimeiro();
+    // ...e a queda seguinte é uma novidade de verdade.
+    mockFetchOk(HTML_LOGIN);
+    await executarVerificacaoSei();
+
+    expect(criarNotificacao).toHaveBeenCalledTimes(2);
   });
 });

@@ -1,0 +1,88 @@
+{
+  "_comentario": "Dados totalmente fictícios, usados só para gerar as imagens da loja. Nenhum processo, nome, CPF ou unidade aqui corresponde a algo real.",
+  "configuracao": {
+    "urlControle": "https://www.sei.mg.gov.br/sei/controlador.php?acao=procedimento_controlar",
+    "intervaloMinutos": 5,
+    "somAtivo": true,
+    "notificacoesAtivas": true,
+    "notificarDesconexao": false,
+    "regraNotificacao": "todos",
+    "usuarioSigla": "00000000191",
+    "marcadoresNotificacao": [],
+    "primeiraCargaRealizada": true,
+    "escopoRadar": "unidade",
+    "marcadoresRadar": [],
+    "radarOnboardingConcluido": true
+  },
+  "marcadores": ["Urgente", "Aguardando parecer", "Prazo legal", "Rotina"],
+  "processos": [
+    {
+      "numero": "1400.01.0000871/2026-42",
+      "assunto": "Aquisição de material de expediente para o exercício corrente",
+      "atribuidoPara": "00000000191",
+      "marcadores": [{ "nome": "Urgente", "texto": "Responder até sexta-feira" }],
+      "lido": false,
+      "minutosAtras": 8,
+      "prazoEmDias": 2
+    },
+    {
+      "numero": "1400.01.0000864/2026-07",
+      "assunto": "Solicitação de manutenção preventiva em veículo oficial",
+      "atribuidoPara": "00000000191",
+      "marcadores": [{ "nome": "Rotina" }],
+      "lido": false,
+      "minutosAtras": 41
+    },
+    {
+      "numero": "1400.01.0000859/2026-88",
+      "assunto": "Pedido de acesso a informação — Lei 12.527/2011",
+      "atribuidoPara": null,
+      "marcadores": [{ "nome": "Prazo legal", "texto": "20 dias corridos" }],
+      "lido": false,
+      "minutosAtras": 96,
+      "prazoEmDias": 6
+    },
+    {
+      "numero": "1400.01.0000847/2026-13",
+      "assunto": "Relatório trimestral de atividades da unidade",
+      "atribuidoPara": "ANA.SOUZA",
+      "marcadores": [{ "nome": "Aguardando parecer" }],
+      "lido": true,
+      "minutosAtras": 190
+    },
+    {
+      "numero": "1400.01.0000833/2026-59",
+      "assunto": "Contratação de serviço de dedetização das instalações",
+      "atribuidoPara": "CARLOS.LIMA",
+      "marcadores": [],
+      "lido": true,
+      "minutosAtras": 320
+    },
+    {
+      "numero": "1400.01.0000821/2026-96",
+      "assunto": "Designação de servidor para comissão de recebimento",
+      "atribuidoPara": "00000000191",
+      "marcadores": [{ "nome": "Rotina" }],
+      "lido": true,
+      "minutosAtras": 480
+    },
+    {
+      "numero": "1400.01.0000818/2026-34",
+      "assunto": "Renovação de contrato de manutenção predial",
+      "atribuidoPara": null,
+      "marcadores": [],
+      "lido": true,
+      "minutosAtras": 610
+    }
+  ],
+  "andamento": {
+    "numero": "1400.01.0000871/2026-42",
+    "unidadeGeradora": "SEPLAG/SUPRI",
+    "enviadoPorUnidade": "SEPLAG/DIRAD",
+    "linhas": [
+      { "horasAtras": 8, "unidade": "SEPLAG/SUPRI", "usuario": "ANA.SOUZA", "descricao": "Processo remetido pela unidade SEPLAG/DIRAD" },
+      { "horasAtras": 30, "unidade": "SEPLAG/DIRAD", "usuario": "CARLOS.LIMA", "descricao": "Juntada de documento: Termo de Referência" },
+      { "horasAtras": 54, "unidade": "SEPLAG/DIRAD", "usuario": "CARLOS.LIMA", "descricao": "Processo público gerado" }
+    ]
+  }
+}
