@@ -88,6 +88,16 @@ Publicada a partir de `docs/index.html`.
 
 ## Imagens
 
-`store-assets/screenshots/` — cinco imagens 1280x800, geradas a partir do popup real com dados
-totalmente fictícios (`scripts/dados-demo.json`). Nenhum número de processo, nome, CPF ou
-unidade que apareça nelas corresponde a algo real.
+Todas geradas por script e regeráveis a qualquer momento. Os dados que aparecem nelas são
+**totalmente fictícios** (`scripts/dados-demo.json`): nenhum número de processo, nome, CPF ou
+unidade corresponde a algo real.
+
+| Campo da loja | Arquivo | Formato | Comando |
+| :--- | :--- | :--- | :--- |
+| Capturas de tela (até 5) | `store-assets/screenshots/*.png` | 1280x800 | `npm run screenshots` |
+| Bloco promocional pequeno | `store-assets/promo/bloco-pequeno-440x280.png` | 440x280, PNG 24 bits sem alfa | `npm run promos` |
+| Bloco promocional de letreiro | `store-assets/promo/bloco-letreiro-1400x560.png` | 1400x560, PNG 24 bits sem alfa | `npm run promos` |
+
+O bloco de letreiro só é usado se a extensão for selecionada para a vitrine da loja; o pequeno
+aparece na grade de busca e de categorias. `npm run promos` confere o color type do PNG antes
+de gravar e cai para JPEG se o Chromium escrever canal alfa — a loja recusa PNG com alfa.

@@ -14,109 +14,19 @@
  * Chromium na máquina, aponte para ele com a variável CHROMIUM_PATH.
  */
 import { chromium } from '@playwright/test';
-import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { RAIZ, prepararFontes, servirArquivos } from './estudio.mjs';
 
-const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(RAIZ, 'dist');
 const SAIDA = path.join(RAIZ, 'store-assets', 'screenshots');
-const CACHE_FONTES = path.join(RAIZ, 'node_modules', '.cache', 'fontes-screenshots');
 
 const LARGURA_POPUP = 520;
 const ALTURA_POPUP = 600;
 const LARGURA_LOJA = 1280;
 const ALTURA_LOJA = 800;
 
-const TIPOS = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.woff2': 'font/woff2',
-};
-
 const dados = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'dados-demo.json'), 'utf8'));
-
-/* -------------------------------------------------------------------------- */
-/* Fontes                                                                      */
-/* -------------------------------------------------------------------------- */
-
-/**
- * O popup pede 'Figtree' e 'Bricolage Grotesque', que a extensão não empacota — em máquinas
- * sem elas o CSS cai para Trebuchet MS. Aqui elas são baixadas e servidas localmente para a
- * imagem sair com a tipografia que o design pede. Sem rede, seguimos com a fonte do sistema:
- * a captura continua válida, só muda o desenho das letras.
- */
-const prepararFontes = async () => {
-  const css = path.join(CACHE_FONTES, 'fontes.css');
-  if (fs.existsSync(css)) return true;
-
-  fs.mkdirSync(CACHE_FONTES, { recursive: true });
-  const url =
-    'https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700' +
-    '&family=Bricolage+Grotesque:wght@600;700&display=block';
-
-  try {
-    const resposta = await fetch(url, {
-      headers: {
-        // Sem User-Agent de navegador o Google devolve TTF em vez de woff2
-        'User-Agent':
-          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
-      },
-    });
-    if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-    let folha = await resposta.text();
-
-    const arquivos = [...new Set(folha.match(/https:\/\/fonts\.gstatic\.com[^)]+/g) || [])];
-    for (const [i, arquivo] of arquivos.entries()) {
-      const bin = await fetch(arquivo);
-      if (!bin.ok) throw new Error(`HTTP ${bin.status} em ${arquivo}`);
-      const nome = `fonte-${i}.woff2`;
-      fs.writeFileSync(path.join(CACHE_FONTES, nome), Buffer.from(await bin.arrayBuffer()));
-      folha = folha.split(arquivo).join(`/__fontes/${nome}`);
-    }
-
-    fs.writeFileSync(css, folha);
-    return true;
-  } catch (erro) {
-    console.warn(`  ! Fontes indisponíveis (${erro.message}); usando a fonte do sistema.`);
-    fs.rmSync(CACHE_FONTES, { recursive: true, force: true });
-    return false;
-  }
-};
-
-/* -------------------------------------------------------------------------- */
-/* Servidor                                                                    */
-/* -------------------------------------------------------------------------- */
-
-const servirDist = () =>
-  new Promise((resolve) => {
-    const servidor = http.createServer((req, res) => {
-      const caminhoUrl = decodeURIComponent((req.url || '/').split('?')[0]);
-
-      const arquivo = caminhoUrl.startsWith('/__fontes/')
-        ? path.join(CACHE_FONTES, path.basename(caminhoUrl))
-        : path.join(DIST, path.normalize(caminhoUrl).replace(/^(\.\.[/\\])+/, ''));
-
-      if (!arquivo.startsWith(DIST) && !arquivo.startsWith(CACHE_FONTES)) {
-        res.writeHead(403).end();
-        return;
-      }
-      if (!fs.existsSync(arquivo) || fs.statSync(arquivo).isDirectory()) {
-        res.writeHead(404).end('não encontrado');
-        return;
-      }
-
-      res.writeHead(200, { 'Content-Type': TIPOS[path.extname(arquivo)] || 'application/octet-stream' });
-      fs.createReadStream(arquivo).pipe(res);
-    });
-
-    servidor.listen(0, '127.0.0.1', () => resolve({ servidor, porta: servidor.address().port }));
-  });
 
 /* -------------------------------------------------------------------------- */
 /* Dados fictícios                                                             */
@@ -334,8 +244,7 @@ const principal = async () => {
   }
 
   const temFontes = await prepararFontes();
-  const { servidor, porta } = await servirDist();
-  const base = `http://127.0.0.1:${porta}`;
+  const { base, fechar } = await servirArquivos({ '/': DIST });
   fs.mkdirSync(SAIDA, { recursive: true });
 
   // CHROMIUM_PATH permite apontar para um Chromium já instalado na máquina; sem ele, o
@@ -401,7 +310,7 @@ const principal = async () => {
     }
   } finally {
     await navegador.close();
-    servidor.close();
+    fechar();
   }
 
   console.log(`\n${CENAS.length} imagens ${LARGURA_LOJA}x${ALTURA_LOJA} em store-assets/screenshots/`);
