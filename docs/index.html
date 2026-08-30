@@ -137,7 +137,7 @@
   <div class="wrap">
     <h1>Política de Privacidade — SEI! Radar</h1>
     <p class="subtitle">Notificações automáticas de novos processos no SEI, com extração de assunto e link de acesso rápido.</p>
-    <p class="meta">Última atualização: 26 de agosto de 2026</p>
+    <p class="meta">Última atualização: 30 de agosto de 2026 (versão 1.1.0)</p>
 
     <p>
       <strong>Resumo:</strong> o SEI! Radar não possui servidores próprios, não envia nenhum dado para a internet e
@@ -285,6 +285,16 @@
         </tbody>
       </table>
     </div>
+    <p>
+      <strong>Sobre o aviso &ldquo;ler e alterar seus dados&rdquo;.</strong> Quando você concede acesso a um
+      domínio, o navegador usa sempre a mesma frase &mdash; &ldquo;ler e alterar seus dados&rdquo; &mdash;
+      porque o Chrome não oferece uma permissão de host somente-leitura: existe um único nível, e o texto
+      descreve o que uma extensão <em>poderia</em> fazer com ele, não o que esta faz. O SEI! Radar apenas lê.
+      Todas as requisições ao SEI são <code>GET</code>; não há nenhum <code>POST</code>, <code>PUT</code> ou
+      <code>DELETE</code> no código, e o script de conteúdo não escreve nada na página (não altera o DOM, não
+      preenche formulários, não clica em nada e não assina, move ou conclui processo algum). O código-fonte
+      completo está publicado e pode ser auditado.
+    </p>
 
     <h2>5. Onde e por quanto tempo os dados ficam armazenados</h2>
     <p>
@@ -315,7 +325,7 @@
 
     <h2>8. Notificações e áudio</h2>
     <p>
-      As notificações exibidas (novo processo, marcador atualizado, sessão expirada) usam apenas dados já extraídos
+      As notificações exibidas (novo processo, marcador atualizado e, se você ligar, sessão expirada) usam apenas dados já extraídos
       localmente (número, assunto, marcadores) e são geradas e exibidas inteiramente pelo seu navegador através da
       API nativa <code>chrome.notifications</code>. O alerta sonoro é reproduzido localmente via um documento
       auxiliar (offscreen) usando Web Audio API, sem envio de dados a serviços externos.

@@ -1,8 +1,12 @@
 import {
   obterConfiguracao,
   obterProcessos,
+  obterStatusSessao,
+  obterUltimoAlertaDesconexao,
   salvarProcessos,
   salvarStatusSessao,
+  salvarUltimoAlertaDesconexao,
+  limparUltimoAlertaDesconexao,
   salvarConfiguracao,
   salvarMarcadoresDisponiveis,
   salvarAndamentos,
@@ -45,8 +49,8 @@ const NOME_ALARME = 'sei_alarme_verificacao';
 // Mapa em memória de notificações para URLs de destino
 const linksNotificacoes = new Map<string, string>();
 
-// Controle de cooldown para alertas de desconexão/instabilidade (máximo 1 a cada 30 min para o mesmo status)
-let ultimoAlertaDesconexao: { status: StatusSessao; timestamp: number } | null = null;
+/** Segunda barreira contra repetição, além da checagem de transição de status */
+const COOLDOWN_ALERTA_DESCONEXAO_MS = 30 * 60 * 1000;
 
 /**
  * Atualiza o badge do ícone da extensão com a contagem de não lidos ou status de erro/desconexão
@@ -146,27 +150,37 @@ const tocarAlertaSonoro = async (): Promise<void> => {
 };
 
 /**
- * Dispara notificação nativa quando a sessão expirar ou o SEI ficar instável
+ * Dispara notificação nativa quando a sessão expirar ou o SEI ficar instável.
+ *
+ * Só avisa na *transição* para o estado ruim, e nunca mais enquanto ele durar: a sessão do
+ * SEI expira o tempo todo, e um aviso por verificação (a cada `intervaloMinutos`) é ruído,
+ * não informação. O estado contínuo já aparece de graça no badge "OFF" do ícone e no banner
+ * dentro do popup.
  */
 const notificarDesconexaoOuInstabilidade = async (
   novoStatus: 'desconectado' | 'erro',
+  statusAnterior: StatusSessao,
   config: ConfiguracaoExtensao,
   motivo?: string
 ) => {
   if (typeof chrome === 'undefined' || !chrome.notifications) return;
-  if (!config.notificacoesAtivas) return;
+  if (!config.notificacoesAtivas || !config.notificarDesconexao) return;
+
+  // Continuar caído não é novidade: só a queda é.
+  if (statusAnterior === novoStatus) return;
 
   const agora = Date.now();
-  // Cooldown de 30 minutos para evitar spam contínuo
+  // Rede de segurança para o caso de o status oscilar (conectado -> caído -> conectado -> caído)
+  const ultimoAlerta = await obterUltimoAlertaDesconexao();
   if (
-    ultimoAlertaDesconexao &&
-    ultimoAlertaDesconexao.status === novoStatus &&
-    agora - ultimoAlertaDesconexao.timestamp < 30 * 60 * 1000
+    ultimoAlerta &&
+    ultimoAlerta.status === novoStatus &&
+    agora - ultimoAlerta.timestamp < COOLDOWN_ALERTA_DESCONEXAO_MS
   ) {
     return;
   }
 
-  ultimoAlertaDesconexao = { status: novoStatus, timestamp: agora };
+  await salvarUltimoAlertaDesconexao(novoStatus, agora);
 
   const idNotificacao = `sei_alerta_status_${novoStatus}_${agora}`;
   linksNotificacoes.set(idNotificacao, config.urlControle);
@@ -484,7 +498,7 @@ const processarColeta = async (processosColetados: ProcessoSei[]) => {
 
   await salvarProcessos(listaAtualizada);
   await salvarStatusSessao('conectado');
-  ultimoAlertaDesconexao = null;
+  await limparUltimoAlertaDesconexao();
   await atualizarBadge(listaAtualizada, 'conectado');
 
   if (ehPrimeiraCarga) {
@@ -581,7 +595,7 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
             }
             const resultado = await processarNovosProcessos(respostaTab.processos || []);
             await salvarStatusSessao('conectado');
-            ultimoAlertaDesconexao = null;
+            await limparUltimoAlertaDesconexao();
             return { sucesso: true, novos: resultado.novos, total: resultado.total };
           }
         } catch {
@@ -623,8 +637,14 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
     });
 
     if (!resposta.ok) {
+      const { status: statusAnterior } = await obterStatusSessao();
       await salvarStatusSessao('desconectado');
-      await notificarDesconexaoOuInstabilidade('desconectado', config, `HTTP ${resposta.status}`);
+      await notificarDesconexaoOuInstabilidade(
+        'desconectado',
+        statusAnterior,
+        config,
+        `HTTP ${resposta.status}`
+      );
       const processosArmazenados = await obterProcessos();
       await atualizarBadge(processosArmazenados, 'desconectado');
       return { sucesso: false, novos: 0, total: 0, mensagem: `HTTP ${resposta.status}` };
@@ -641,8 +661,9 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
       html.includes('Informe seu usuário e senha');
 
     if (isLogin) {
+      const { status: statusAnterior } = await obterStatusSessao();
       await salvarStatusSessao('desconectado');
-      await notificarDesconexaoOuInstabilidade('desconectado', config);
+      await notificarDesconexaoOuInstabilidade('desconectado', statusAnterior, config);
       const processosArmazenados = await obterProcessos();
       await atualizarBadge(processosArmazenados, 'desconectado');
       return { sucesso: false, novos: 0, total: 0, mensagem: 'Faça login no SEI' };
@@ -664,7 +685,7 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
 
     const resultado = await processarNovosProcessos(processosColetados);
     await salvarStatusSessao('conectado');
-    ultimoAlertaDesconexao = null;
+    await limparUltimoAlertaDesconexao();
 
     return {
       sucesso: true,
@@ -673,8 +694,9 @@ export const executarVerificacaoSei = async (): Promise<ResultadoVerificacaoSei>
     };
   } catch (erro: any) {
     console.error('Erro na verificação do SEI:', erro);
+    const { status: statusAnterior } = await obterStatusSessao();
     await salvarStatusSessao('erro');
-    await notificarDesconexaoOuInstabilidade('erro', config, erro?.message);
+    await notificarDesconexaoOuInstabilidade('erro', statusAnterior, config, erro?.message);
     const processosArmazenados = await obterProcessos();
     await atualizarBadge(processosArmazenados, 'erro');
     return {

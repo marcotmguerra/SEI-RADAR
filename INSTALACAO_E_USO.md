@@ -114,6 +114,7 @@ A tela de controle do SEI não mostra de onde o processo veio nem quando foi env
 
 #### A extensão mostra "Faça login no SEI" ou "Desconectado"
 - O SEI encerra a sessão por inatividade após um tempo. Basta clicar no botão **"Abrir SEI"** e efetuar login novamente. Na próxima checagem periódica, a extensão reconectará automaticamente.
+- Esse estado **não gera notificação** na área de trabalho: ele aparece no `OFF` do ícone e no banner dentro do Radar. Se você preferir ser avisado, ligue em **Configurações → Notificações e Alertas → "Avisar quando a sessão do SEI cair"**. Mesmo ligado, o aviso sai uma única vez por queda — não se repete a cada verificação enquanto você continua deslogado.
 
 #### As notificações na área de trabalho não aparecem
 - Verifique se o Windows/Linux não está no modo "Não Perturbe" ou "Assistente de Foco".
@@ -124,7 +125,9 @@ A tela de controle do SEI não mostra de onde o processo veio nem quando foi env
 
 #### O navegador avisa "Ler e alterar seus dados". A extensão altera algo no SEI?
 - **Não altera nada.** Esse texto é fixo do Chrome e descreve o que a permissão *habilita*, não o que a extensão *faz* — não existe permissão de leitura sem escrita no navegador, então qualquer extensão que leia páginas mostra essa mesma frase.
+- Na prática: todas as requisições ao SEI são `GET`, não existe nenhum `POST`/`PUT`/`DELETE` no código, e o script de conteúdo não escreve na página. A extensão não abre, não move, não assina e não conclui processo nenhum.
 - O que dá para controlar é o **alcance**, e ele foi restringido: o aviso lista apenas os domínios institucionais (`.gov.br`, `.jus.br`, `.leg.br`, `.mp.br`, `.def.br`), e não "todos os sites".
+- Se você instalou a versão **1.0.1** e viu um pedido de acesso a *todos os sites*, era o pacote antigo: aquele build ainda trazia `host_permissions` amplo. A partir da **1.1.0**, nenhuma permissão de site é concedida na instalação.
 
 #### O filtro "Sem atribuição" aparece zerado
 - Verifique o escopo do Radar na barra superior do painel. Em **"Atribuídos a mim"**, a extensão só guarda os seus processos, então nunca haverá processos sem atribuição na lista. Troque para **"Todos os processos da unidade"** — o próprio painel oferece o atalho.

@@ -15,6 +15,7 @@ const configBase: ConfiguracaoExtensao = {
   intervaloMinutos: 5,
   somAtivo: true,
   notificacoesAtivas: true,
+  notificarDesconexao: false,
   regraNotificacao: 'todos',
   usuarioSigla: '00652162614',
   marcadoresNotificacao: [],

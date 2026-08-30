@@ -15,6 +15,7 @@ const CHAVE_ULTIMA_VERIFICACAO = 'sei_monitor_ultima_verificacao';
 const CHAVE_MARCADORES_DISPONIVEIS = 'sei_monitor_marcadores_disponiveis';
 const CHAVE_ANDAMENTOS = 'sei_monitor_andamentos';
 const CHAVE_FILTROS_UI = 'sei_monitor_filtros_ui';
+const CHAVE_ALERTA_DESCONEXAO = 'sei_monitor_alerta_desconexao';
 
 /** Tempo após o qual um andamento em cache é considerado velho */
 export const VALIDADE_ANDAMENTO_MS = 6 * 60 * 60 * 1000;
@@ -282,3 +283,36 @@ export const salvarStatusSessao = async (
   await arm.set(CHAVE_ULTIMA_VERIFICACAO, ultimaVerificacao);
 };
 
+/**
+ * Registro do último aviso de desconexão/instabilidade já disparado.
+ *
+ * Precisa morar no armazenamento, e não numa variável de módulo: o service worker do
+ * Manifest V3 é descartado depois de alguns segundos ocioso, então qualquer estado em
+ * memória volta zerado a cada despertar do alarme — e o cooldown que deveria valer 30
+ * minutos acabava valendo nada, disparando um aviso por verificação.
+ */
+export interface AlertaDesconexao {
+  status: StatusSessao;
+  timestamp: number;
+}
+
+export const obterUltimoAlertaDesconexao = async (): Promise<AlertaDesconexao | null> => {
+  const arm = obterArmazenamento();
+  const dados = await arm.get(CHAVE_ALERTA_DESCONEXAO);
+  if (!dados || typeof dados !== 'object') return null;
+  if (typeof dados.timestamp !== 'number' || !dados.status) return null;
+  return { status: dados.status, timestamp: dados.timestamp };
+};
+
+export const salvarUltimoAlertaDesconexao = async (
+  status: StatusSessao,
+  timestamp: number = Date.now()
+): Promise<void> => {
+  const arm = obterArmazenamento();
+  await arm.set(CHAVE_ALERTA_DESCONEXAO, { status, timestamp });
+};
+
+export const limparUltimoAlertaDesconexao = async (): Promise<void> => {
+  const arm = obterArmazenamento();
+  await arm.set(CHAVE_ALERTA_DESCONEXAO, null);
+};

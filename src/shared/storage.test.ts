@@ -17,6 +17,9 @@ import {
   andamentoEstaFresco,
   obterFiltrosUi,
   salvarFiltrosUi,
+  obterUltimoAlertaDesconexao,
+  salvarUltimoAlertaDesconexao,
+  limparUltimoAlertaDesconexao,
   VALIDADE_ANDAMENTO_MS,
   VALIDADE_ERRO_MS,
 } from './storage';
@@ -265,3 +268,55 @@ describe('Storage Manager', () => {
   });
 });
 
+
+describe('aviso de sessão finalizada', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it('vem desligado por padrão numa instalação nova', async () => {
+    const config = await obterConfiguracao();
+    expect(config.notificarDesconexao).toBe(false);
+  });
+
+  it('continua desligado para quem já usava a extensão antes da opção existir', async () => {
+    // Usuário legado: config gravada sem o campo novo. Ele é justamente quem estava
+    // recebendo o aviso repetido, então a migração não pode ligar nada.
+    localStorage.setItem(
+      'sei_monitor_configuracao',
+      JSON.stringify({
+        urlControle: 'https://sei.mg.gov.br/sei/controlador.php',
+        intervaloMinutos: 5,
+        usuarioSigla: '00652162614',
+        primeiraCargaRealizada: true,
+      })
+    );
+
+    const config = await obterConfiguracao();
+    expect(config.radarOnboardingConcluido).toBe(true);
+    expect(config.notificarDesconexao).toBe(false);
+  });
+
+  it('preserva a escolha de quem liga a opção', async () => {
+    await salvarConfiguracao({ notificarDesconexao: true });
+    expect((await obterConfiguracao()).notificarDesconexao).toBe(true);
+  });
+
+  it('guarda e limpa o registro do último aviso disparado', async () => {
+    expect(await obterUltimoAlertaDesconexao()).toBeNull();
+
+    await salvarUltimoAlertaDesconexao('desconectado', 1_700_000_000_000);
+    expect(await obterUltimoAlertaDesconexao()).toEqual({
+      status: 'desconectado',
+      timestamp: 1_700_000_000_000,
+    });
+
+    await limparUltimoAlertaDesconexao();
+    expect(await obterUltimoAlertaDesconexao()).toBeNull();
+  });
+
+  it('ignora um registro corrompido em vez de tratá-lo como aviso recente', async () => {
+    localStorage.setItem('sei_monitor_alerta_desconexao', JSON.stringify({ status: 'erro' }));
+    expect(await obterUltimoAlertaDesconexao()).toBeNull();
+  });
+});

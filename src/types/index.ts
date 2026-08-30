@@ -37,6 +37,15 @@ export interface ConfiguracaoExtensao {
   intervaloMinutos: number;
   somAtivo: boolean;
   notificacoesAtivas: boolean;
+  /**
+   * Aviso do sistema quando a sessão do SEI cai ou o SEI fica instável.
+   *
+   * Desligado por padrão: o estado já aparece sem incomodar no badge do ícone ("OFF") e
+   * num banner dentro do popup, e a sessão do SEI expira com frequência — como aviso
+   * automático, isso vira uma notificação a cada verificação para quem só deixa o
+   * navegador aberto.
+   */
+  notificarDesconexao: boolean;
   regraNotificacao: RegraNotificacao;
   usuarioSigla: string;
   marcadoresNotificacao: string[];
@@ -106,6 +115,7 @@ export const CONFIGURACAO_PADRAO: ConfiguracaoExtensao = {
   intervaloMinutos: 5,
   somAtivo: true,
   notificacoesAtivas: true,
+  notificarDesconexao: false,
   regraNotificacao: 'todos',
   usuarioSigla: '',
   marcadoresNotificacao: [],

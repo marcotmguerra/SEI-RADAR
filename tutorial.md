@@ -21,7 +21,7 @@ Ela monitora sua caixa de processos da unidade em segundo plano, extrai automati
 ## 🎯 O que a Extensão Faz
 
 - **🔔 Notificações Nativas no Desktop**: Exibe alertas no canto da tela (Windows/Linux/macOS) informando número do processo, assunto, atribuição e marcadores.
-- **⚠️ Alerta de Conexão e Sessão**: Notifica no desktop e exibe banner no popup quando sua sessão no SEI expirar ou se o sistema passar por instabilidade/queda.
+- **⚠️ Alerta de Conexão e Sessão**: Exibe `OFF` no ícone da extensão e um banner no popup quando sua sessão no SEI expirar ou o sistema estiver instável. A notificação no desktop para esse caso é **opcional e vem desligada**, justamente para não avisar de novo a cada verificação — ligue em *Configurações → Avisar quando a sessão do SEI cair* se preferir ser notificado.
 - **🤫 Carga Inicial Silenciosa (Anti-Spam)**: Ao abrir o SEI pela primeira vez, ela registra todos os processos já existentes na sua unidade sem inundar seu computador com dezenas de notificações. Apenas processos que chegarem depois disso dispararão alertas.
 - **👤 Filtro "Atribuídos a Mim"**: Identifica automaticamente sua sigla/usuário no SEI (ou permite configurá-la) e separa com 1 clique apenas os processos destinados a você.
 - **🏷️ Filtro por Marcadores**: Detecta todas as tags/marcadores criados no SEI (`Urgente`, `Licitação`, `Análise Jurídica`, etc.) e cria chips de filtros rápidos para visualização instantânea.
@@ -155,6 +155,7 @@ Clique no ícone de **engrenagem ⚙️** no canto superior direito do popup par
 | **Intervalo de Verificação** | Define a frequência de checagem automática (1, 2, 5, 10 ou 15 minutos). |
 | **Notificações no Sistema** | Ativa ou silencia os popups nativos de notificação na área de trabalho. |
 | **Radar Sonoro** | Ativa ou desativa o aviso sonoro discreto ao receber processos. |
+| **Avisar quando a sessão do SEI cair** | Desligado por padrão. Ligue para receber uma notificação no desktop quando sua sessão expirar. O aviso sai **uma vez por queda**, e não se repete enquanto você continuar deslogado. Mesmo desligado, o `OFF` no ícone e o banner dentro do Radar continuam sinalizando. |
 | **Testar Notificação** | Dispara uma notificação de demonstração para testar som e visualização no seu sistema operacional. |
 
 ---
