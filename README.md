@@ -60,8 +60,14 @@ O mesmo vale para a leitura da página com a aba aberta: os `content_scripts` ta
 ## Comandos de Desenvolvimento
 
 ```bash
+# Executa tudo o que o CI cobra: tipos + testes unitários
+npm run verify
+
 # Executa a suíte de testes unitários (Vitest)
 npm test
+
+# Executa os testes de ponta a ponta do popup (Playwright); compila antes
+npm run test:e2e
 
 # Valida os tipos TypeScript
 npm run typecheck

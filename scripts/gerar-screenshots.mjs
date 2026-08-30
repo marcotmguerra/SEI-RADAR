@@ -13,7 +13,7 @@
  * Precisa do Chromium do Playwright (`npx playwright install chromium`). Se você já tem um
  * Chromium na máquina, aponte para ele com a variável CHROMIUM_PATH.
  */
-import { chromium } from 'playwright';
+import { chromium } from '@playwright/test';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
