@@ -81,6 +81,9 @@ npm run package
 # Gera as imagens 1280x800 da loja a partir do popup real, com dados fictícios
 npm run screenshots
 
+# Gera os blocos promocionais da loja (440x280 e 1400x560)
+npm run promos
+
 # Inicia o servidor Vite para desenvolvimento de interface
 npm run dev
 ```
