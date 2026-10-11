@@ -3,6 +3,8 @@
   "name": "SEI! Radar",
   "version": "1.1.0",
   "description": "Notificações automáticas de novos processos no SEI com exibição direta do assunto e link de acesso rápido.",
+  "author": "Marco Guerra",
+  "homepage_url": "https://marcoguerra.dev.br",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
